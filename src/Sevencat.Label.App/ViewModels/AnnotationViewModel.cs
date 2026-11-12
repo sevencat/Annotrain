@@ -55,16 +55,18 @@ public sealed partial class AnnotationViewModel : ObservableObject
     }
 
     public AnnotationViewModel(
+        TinyLabelDatabase database,
         long projectId,
         IReadOnlyList<AnnotationTarget> targets,
         IReadOnlyList<string> classes,
         AppSettings settings,
         SettingsStore settingsStore)
     {
+        ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentOutOfRangeException.ThrowIfZero(targets.Count);
 
-        _store = new DatabaseAnnotationStore(projectId);
+        _store = new DatabaseAnnotationStore(database, projectId);
         _settings = settings;
         _settingsStore = settingsStore;
         _targets = targets;

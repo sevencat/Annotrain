@@ -29,15 +29,20 @@ public sealed class TinyLabelDatasetStore : IDatasetStore, IDisposable
     private readonly LabelmeCodec _codec = new();
     private readonly ILogger? _logger;
 
+    /// <summary>库是本 store 自己开的（外部数据集）才由它关；复用容器里的当前库时不关。</summary>
+    private readonly bool _ownsDatabase;
+
     internal TinyLabelDatasetStore(
         TinyLabelDatabase db,
         ProjectEntity project,
         StorageLocation root,
         ClassCatalog classes,
+        bool ownsDatabase,
         ILogger? logger = null)
     {
         _db = db;
         _project = project;
+        _ownsDatabase = ownsDatabase;
         _logger = logger;
         Root = root;
         Classes = classes;
@@ -179,7 +184,13 @@ public sealed class TinyLabelDatasetStore : IDatasetStore, IDisposable
             .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)];
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose()
+    {
+        if (_ownsDatabase)
+        {
+            _db.Dispose();
+        }
+    }
 
     private sealed class TinyLabelSplit(TinyLabelDatasetStore owner, string name) : IDatasetSplit
     {
@@ -191,7 +202,9 @@ public sealed class TinyLabelDatasetStore : IDatasetStore, IDisposable
 }
 
 /// <summary>「图片目录 + SQLite」形态的 Provider：探测命中 <see cref="DatasetFormat.TinyLabelDb"/> 时负责打开。</summary>
-public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory = null) : IDatasetStoreProvider
+public sealed class TinyLabelDatasetStoreProvider(
+    TinyLabelDatabase? current = null,
+    ILoggerFactory? loggerFactory = null) : IDatasetStoreProvider
 {
     public string Id => "tinylabel";
 
@@ -226,9 +239,10 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
 
         // 就是当前工作库时直接用（store 关闭不会关掉它）；导入/导出只碰当前库，
         // 会走到 Open 的只有"打开外部数据集"那种场景（训练端选目录、造模拟数据）。
-        TinyLabelDatabase db = string.Equals(dbPath, TinyLabelDatabase.CurrentPath, StringComparison.OrdinalIgnoreCase)
-            ? TinyLabelDatabase.Current
-            : TinyLabelDatabase.Open(dbPath, createIfMissing: false);
+        bool owns = current is null
+            || !string.Equals(dbPath, current.Path, StringComparison.OrdinalIgnoreCase);
+
+        TinyLabelDatabase db = owns ? TinyLabelDatabase.Open(dbPath, createIfMissing: false) : current!;
 
         try
         {
@@ -240,13 +254,18 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
                 project,
                 probe.Root,
                 classes,
+                owns,
                 loggerFactory?.CreateLogger<TinyLabelDatasetStore>());
 
             return Task.FromResult(store);
         }
         catch
         {
-            db.Dispose();
+            if (owns)
+            {
+                db.Dispose();
+            }
+
             throw;
         }
     }

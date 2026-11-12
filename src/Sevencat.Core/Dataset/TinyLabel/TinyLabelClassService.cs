@@ -1,3 +1,4 @@
+using FreeSql;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
@@ -18,6 +19,7 @@ public sealed record TinyLabelClassRow(long Id, string Name, int OrderIndex, str
 /// </para>
 /// </summary>
 public sealed class TinyLabelClassService(
+    IFreeSql orm,
     ILogger<TinyLabelClassService>? logger = null)
 {
     public Task<IReadOnlyList<TinyLabelClassRow>> ListAsync(
@@ -25,10 +27,7 @@ public sealed class TinyLabelClassService(
         long projectId,
         CancellationToken ct = default)
     {
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        IReadOnlyList<TinyLabelClassRow> rows = [.. database.Orm.Select<ProjectClassEntity>()
+        IReadOnlyList<TinyLabelClassRow> rows = [.. orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId)
             .OrderBy(row => row.OrderIndex)
             .ToList()
@@ -48,10 +47,7 @@ public sealed class TinyLabelClassService(
         CancellationToken ct = default)
     {
         string trimmed = Validate(name);
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        bool exists = database.Orm.Select<ProjectClassEntity>()
+        bool exists = orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId && row.Name == trimmed)
             .Any();
 
@@ -60,17 +56,17 @@ public sealed class TinyLabelClassService(
             throw new InvalidOperationException(Text.Format("Error.ClassExists", trimmed));
         }
 
-        bool hasClasses = database.Orm.Select<ProjectClassEntity>()
+        bool hasClasses = orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId)
             .Any();
 
         int next = hasClasses
-            ? database.Orm.Select<ProjectClassEntity>()
+            ? orm.Select<ProjectClassEntity>()
                 .Where(row => row.ProjectId == projectId)
                 .Max(row => row.OrderIndex) + 1
             : 0;
 
-        database.Orm.Insert(new ProjectClassEntity
+        orm.Insert(new ProjectClassEntity
         {
             ProjectId = projectId,
             Name = trimmed,
@@ -94,10 +90,7 @@ public sealed class TinyLabelClassService(
         CancellationToken ct = default)
     {
         string trimmed = Validate(name);
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        bool duplicated = database.Orm.Select<ProjectClassEntity>()
+        bool duplicated = orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId && row.Name == trimmed && row.Id != classId)
             .Any();
 
@@ -106,7 +99,7 @@ public sealed class TinyLabelClassService(
             throw new InvalidOperationException(Text.Format("Error.ClassExists", trimmed));
         }
 
-        int affected = database.Orm.Update<ProjectClassEntity>()
+        int affected = orm.Update<ProjectClassEntity>()
             .Where(row => row.Id == classId && row.ProjectId == projectId)
             .Set(row => row.Name, trimmed)
             .ExecuteAffrows();
@@ -131,14 +124,11 @@ public sealed class TinyLabelClassService(
         long classId,
         CancellationToken ct = default)
     {
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        ProjectClassEntity entity = database.Orm.Select<ProjectClassEntity>()
+        ProjectClassEntity entity = orm.Select<ProjectClassEntity>()
             .Where(row => row.Id == classId && row.ProjectId == projectId)
             .First() ?? throw new InvalidOperationException(Text.Format("Error.ClassNotFound", classId));
 
-        bool used = database.Orm.Select<AnnotationEntity>()
+        bool used = orm.Select<AnnotationEntity>()
             .Where(row => row.ProjectId == projectId)
             .ToList(row => row.DocJson)
             .Any(json => json.Contains($"\"{entity.Name}\"", StringComparison.Ordinal));
@@ -148,7 +138,7 @@ public sealed class TinyLabelClassService(
             throw new InvalidOperationException(Text.Format("Error.ClassInUse", entity.Name));
         }
 
-        database.Orm.Delete<ProjectClassEntity>()
+        orm.Delete<ProjectClassEntity>()
             .Where(row => row.Id == classId)
             .ExecuteAffrows();
 

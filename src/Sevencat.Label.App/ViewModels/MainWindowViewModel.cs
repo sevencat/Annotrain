@@ -43,6 +43,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly DatasetStoreResolver _resolver;
     private readonly AppSettings _settings;
     private readonly SettingsStore _settingsStore;
+    private readonly TinyLabelDatabase _database;
 
     /// <summary>切项目时的代次：异步加载回来发现已经切走就丢弃结果。</summary>
     private int _loadVersion;
@@ -159,15 +160,8 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private int _total;
 
-    /// <summary>
-    /// 当前库文件路径：启动时定过的就是那个（<c>--db</c> / 环境变量 / 数据目录）；
-    /// 还没初始化时按当前数据目录推算，用于「改天要新建库」的提示。
-    /// </summary>
-    public string DatabasePath => TinyLabelDatabase.CurrentPath is { Length: > 0 } initialized
-        ? initialized
-        : string.IsNullOrWhiteSpace(DataDirectory)
-            ? string.Empty
-            : Path.Combine(DataDirectory, TinyLabelProjectCatalog.DefaultDatabaseFile);
+    /// <summary>当前库文件路径：启动时由容器开好（<c>--db</c> / 环境变量 / 数据目录），运行期不变。</summary>
+    public string DatabasePath => _database.Path;
 
     /// <summary>底栏左侧：数据存放位置（照 TinyLabel 的 FooterText）。</summary>
     public string FooterText => Loc.Format("Label.FooterDatabase", DatabasePath);
@@ -183,6 +177,7 @@ public partial class MainWindowViewModel : ObservableObject
     private static Localizer Loc => Localizer.Instance;
 
     public MainWindowViewModel(
+        TinyLabelDatabase database,
         ILogger<MainWindowViewModel> logger,
         LogBuffer logBuffer,
         LabelDatasetImportService importer,
@@ -195,6 +190,7 @@ public partial class MainWindowViewModel : ObservableObject
         AppSettings settings,
         SettingsStore settingsStore)
     {
+        _database = database;
         _logger = logger;
         _importer = importer;
         _catalog = catalog;
@@ -282,7 +278,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         // 数据目录跟着当前库走（库路径在 Program/App 启动时就定死了）
-        folder = Path.GetDirectoryName(TinyLabelDatabase.CurrentPath) ?? folder;
+        folder = Path.GetDirectoryName(_database.Path) ?? folder;
 
         DataDirectory = folder;
         _settings.LastDataDirectory = folder;

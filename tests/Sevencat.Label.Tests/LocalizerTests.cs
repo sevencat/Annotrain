@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Sevencat.Label.Tests;
 
-/// <summary>本地化表完整性与「新建项目不建库」的语义。</summary>
+/// <summary>本地化表完整性，以及启动即建库后「新建项目只插一行」的语义。</summary>
 public class LocalizerTests
 {
     [Fact]
@@ -51,7 +51,7 @@ public class LocalizerTests
     public async Task ExceptionMessages_FollowCurrentLanguage()
     {
         using var workspace = new TestWorkspace();
-        var service = new TinyLabelProjectService();
+        var service = new TinyLabelProjectService(workspace.OpenDatabase().Orm);
         StorageLocation root = StorageLocation.FromPath(workspace.Root);
         Localizer loc = Localizer.Instance;
         string original = loc.Language;
@@ -60,15 +60,15 @@ public class LocalizerTests
         {
             // Core 抛错文案也走 Localizer：切到英文后异常消息不能还是中文
             loc.SetLanguage("en");
-            FileNotFoundException en = await Assert.ThrowsAsync<FileNotFoundException>(
-                () => service.CreateAsync(root, "demo"));
-            Assert.Contains("annotrain.db", en.Message);
-            Assert.DoesNotContain("数据目录", en.Message);
+            ArgumentException en = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.CreateAsync(root, "   "));
+            Assert.Contains("Name", en.Message);
+            Assert.DoesNotContain("项目", en.Message);
 
             loc.SetLanguage("zh");
-            FileNotFoundException zh = await Assert.ThrowsAsync<FileNotFoundException>(
-                () => service.CreateAsync(root, "demo"));
-            Assert.Contains("数据目录", zh.Message);
+            ArgumentException zh = await Assert.ThrowsAsync<ArgumentException>(
+                () => service.CreateAsync(root, "   "));
+            Assert.Contains("项目名", zh.Message);
         }
         finally
         {
@@ -77,21 +77,17 @@ public class LocalizerTests
     }
 
     [Fact]
-    public async Task CreateProject_RequiresExistingDatabase()
+    public async Task CreateProject_WritesIntoStartedDatabase()
     {
         using var workspace = new TestWorkspace();
-        var service = new TinyLabelProjectService();
+        TinyLabelDatabase database = workspace.OpenDatabase();
+        var service = new TinyLabelProjectService(database.Orm);
         StorageLocation root = StorageLocation.FromPath(workspace.Root);
 
-        // 数据目录还没初始化：新建项目应报错，且不会偷偷建库
-        await Assert.ThrowsAsync<FileNotFoundException>(() => service.CreateAsync(root, "空项目"));
-        Assert.False(File.Exists(Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile)));
-
-        // 打开数据目录（初始化空库）后，新建项目只插一行
-        TinyLabelWorkspace.EnsureDatabase(root);
         long projectId = await service.CreateAsync(root, "空项目");
 
         Assert.True(projectId > 0);
-        Assert.True(File.Exists(Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile)));
+        Assert.True(File.Exists(database.Path));
+        Assert.True(Directory.Exists(TinyLabelWorkspace.ProjectDirectory(root, projectId)));
     }
 }

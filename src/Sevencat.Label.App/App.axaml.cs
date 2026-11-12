@@ -10,131 +10,72 @@ using Sevencat.Label;
 using Sevencat.Label.App.ViewModels;
 using Sevencat.Label.App.Views;
 using Sevencat.Label.Server;
-using Sevencat.Label.Server.Data;
 
 namespace Sevencat.Label.App;
 
 public partial class App : Application
 {
-    /// <summary>进程内服务容器；Web 端（M3）也从这里取业务对象。</summary>
-    public IServiceProvider Services { get; private set; } = null!;
-
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
     {
         string[]? args = (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Args;
+        StartupOptions startup = StartupOptions.Parse(args);
 
-        // --open / --annotate 给的是数据目录，与 --data 等价（库、日志都落这里）
-        AppDataPaths.Initialize(
-            AppDataPaths.ReadArgument(args, AppDataPaths.DataArgument)
-            ?? AppDataPaths.ReadArgument(args, "--open")
-            ?? AppDataPaths.ReadArgument(args, "--annotate"));
+        // 数据目录（库、日志都落这里）先定，再打开库：文件不在就当场建空库
+        AppDataPaths.Initialize(startup.DataDirectory);
 
-        // 库路径启动时定一次（--db / ANNOTRAIN_DB / 数据目录里的 annotrain.db）：
-        // 文件不在就当场建空库，容器里的 IFreeSql 单例、配置、账号、项目都指向它
-        TinyLabelDatabase.Initialize(AppDataPaths.ResolveDatabasePath(args));
+        string databasePath = AppDataPaths.ResolveDatabasePath(args);
 
-        var services = new ServiceCollection();
-        services.AddAnnotrainCore("label");
-        services.AddAnnotrainLabel();
-
-        // 账号窗口直接读库（表 web_users），和 Web 端共用同一个连接池
-        services.AddSingleton<WebUserStore>();
-        Services = services.BuildServiceProvider();
+        ServiceProvider services = new ServiceCollection()
+            .AddAnnotrainDatabase(databasePath)
+            .AddAnnotrainCore("label")
+            .AddAnnotrainLabel()
+            .AddAnnotrainWebServer()
+            .AddSingleton(startup)
+            .AddSingleton<MainWindowViewModel>()
+            .AddSingleton<MainWindow>()
+            .BuildServiceProvider();
 
         // 语言：设置里存 zh/en，空值跟随系统
-        AppSettings settings = Services.GetRequiredService<AppSettings>();
-        Localizer.Instance.SetLanguage(
-            string.IsNullOrWhiteSpace(settings.Language)
-                ? Localizer.DetectSystemLanguage()
-                : settings.Language);
+        ApplyLanguage(services.GetRequiredService<AppSettings>());
 
-        ILogger<App> logger = Services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
+        ILogger<App> logger = services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
         logger.LogInformation(
             "标注应用启动，数据目录：{Directory}，数据库：{Database}",
             AppDataPaths.DataDirectory,
-            TinyLabelDatabase.CurrentPath);
+            databasePath);
 
-        // 标注 Web 端：跟着桌面端起停，只绑本机回环；端口被占用时只记日志，不影响桌面端使用
-        LabelWebServer? webServer = StartWebServer(logger);
+        // Web 端随桌面端启停，只绑本机回环；起不来（端口占用等）只记日志，不影响桌面端
+        services.GetRequiredService<LabelWebServerHost>().Start();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var viewModel = ActivatorUtilities.CreateInstance<MainWindowViewModel>(Services);
-            var window = new MainWindow { DataContext = viewModel };
-            desktop.MainWindow = window;
-
-            // --open <数据目录>：启动后直接读这个目录里的项目列表，便于从命令行/快捷方式进入
-            if (AppDataPaths.ReadArgument(desktop.Args, "--open") is { } folder)
-            {
-                window.Opened += async (_, _) => await viewModel.OpenWorkspaceAsync(folder);
-            }
-            else if (AppDataPaths.ReadArgument(desktop.Args, "--annotate") is { } annotateFolder)
-            {
-                // --annotate <数据目录>：打开目录并直接进入首图标注（演示 / 自测用）
-                window.Opened += async (_, _) =>
-                {
-                    await viewModel.OpenWorkspaceAsync(annotateFolder);
-                    await window.AnnotateSelectedAsync();
-                };
-            }
-            else
-            {
-                // 没给参数时回到上次的数据目录
-                window.Opened += async (_, _) => await viewModel.OpenLastWorkspaceAsync();
-            }
+            desktop.MainWindow = services.GetRequiredService<MainWindow>();
 
             desktop.Exit += (_, _) =>
             {
                 logger.LogInformation("标注应用退出");
 
-                if (webServer is not null)
+                // 容器的 DisposeAsync 会顺带停掉 Web 服务、关掉库；窗口已经关了，
+                // 这里只等收尾（超时就不再等，进程反正要退）
+                try
                 {
-                    try
-                    {
-                        webServer.StopAsync().Wait(TimeSpan.FromSeconds(2));
-                        webServer.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "标注 Web 端停止时报错");
-                    }
+                    Task.Run(async () => await services.DisposeAsync()).Wait(TimeSpan.FromSeconds(5));
                 }
-
-                (Services as IDisposable)?.Dispose();
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "释放服务容器时报错");
+                }
             };
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>启动进程内的标注 Web 服务；失败（端口被占等）只记日志，桌面端照常用。</summary>
-    private LabelWebServer? StartWebServer(ILogger logger)
-    {
-        ServerOptions options = new()
-        {
-            DataDirectory = Path.GetDirectoryName(TinyLabelDatabase.CurrentPath) ?? AppDataPaths.DataDirectory,
-        };
-
-        try
-        {
-            LabelWebServer server = LabelWebServer.Create(
-                options,
-                Services,
-                Services.GetRequiredService<ILoggerFactory>());
-
-            server.StartAsync().GetAwaiter().GetResult();
-            logger.LogInformation("标注 Web 端已启动：{Url}", server.Url);
-
-            return server;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "标注 Web 端启动失败（{Url} 可能被占用），桌面端继续", options.Url);
-
-            return null;
-        }
-    }
-
+    private static void ApplyLanguage(AppSettings settings) =>
+        Localizer.Instance.SetLanguage(
+            string.IsNullOrWhiteSpace(settings.Language)
+                ? Localizer.DetectSystemLanguage()
+                : settings.Language);
 }

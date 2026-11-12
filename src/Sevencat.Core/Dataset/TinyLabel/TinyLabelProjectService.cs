@@ -1,3 +1,4 @@
+using FreeSql;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
@@ -7,11 +8,11 @@ namespace Sevencat.Core.Dataset.TinyLabel;
 /// <summary>
 /// 项目级写操作：新建 / 编辑 / 结束（归档）/ 重开 / 删除。
 /// <para>
-/// 「新建项目」只往当前数据目录**已有的** <c>annotrain.db</c> 里插一行，
-/// 不会创建数据库；数据目录本身由 <see cref="TinyLabelWorkspace.EnsureDatabase"/> 在打开目录时初始化。
+/// 「新建项目」只往当前工作库（启动时开好的 <c>annotrain.db</c>）里插一行，不会创建数据库。
 /// </para>
 /// </summary>
 public sealed class TinyLabelProjectService(
+    IFreeSql orm,
     ILogger<TinyLabelProjectService>? logger = null)
 {
     public const int MaxNameLength = 128;
@@ -30,11 +31,7 @@ public sealed class TinyLabelProjectService(
         ct.ThrowIfCancellationRequested();
 
         string trimmed = ValidateName(name);
-        TinyLabelWorkspace.RequireDatabase(root);
-
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        long projectId = (long)database.Orm.Insert(new ProjectEntity
+        long projectId = (long)orm.Insert(new ProjectEntity
         {
             Name = trimmed,
             Description = description?.Trim() ?? string.Empty,
@@ -67,11 +64,7 @@ public sealed class TinyLabelProjectService(
         ct.ThrowIfCancellationRequested();
 
         string trimmed = ValidateName(name);
-        TinyLabelWorkspace.RequireDatabase(root);
-
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        int affected = database.Orm.Update<ProjectEntity>()
+        int affected = orm.Update<ProjectEntity>()
             .Where(project => project.Id == projectId)
             .Set(project => project.Name, trimmed)
             .Set(project => project.Description, description?.Trim() ?? string.Empty)
@@ -97,11 +90,7 @@ public sealed class TinyLabelProjectService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        int affected = database.Orm.Update<ProjectEntity>()
+        int affected = orm.Update<ProjectEntity>()
             .Where(project => project.Id == projectId)
             .Set(project => project.ClosedAt, closed ? DateTime.UtcNow : null)
             .ExecuteAffrows();
@@ -129,14 +118,10 @@ public sealed class TinyLabelProjectService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        database.Orm.Delete<AnnotationEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
-        database.Orm.Delete<ImageEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
-        database.Orm.Delete<ProjectClassEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
-        database.Orm.Delete<ProjectEntity>().Where(row => row.Id == projectId).ExecuteAffrows();
+        orm.Delete<AnnotationEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        orm.Delete<ImageEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        orm.Delete<ProjectClassEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        orm.Delete<ProjectEntity>().Where(row => row.Id == projectId).ExecuteAffrows();
 
         if (deleteImages)
         {

@@ -13,13 +13,15 @@ public sealed class WebUserStore
 {
     private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
 
+    private readonly TinyLabelDatabase _database;
     private readonly IFreeSql _orm;
 
-    public WebUserStore(IFreeSql orm)
+    public WebUserStore(TinyLabelDatabase database)
     {
-        ArgumentNullException.ThrowIfNull(orm);
+        ArgumentNullException.ThrowIfNull(database);
 
-        _orm = orm;
+        _database = database;
+        _orm = database.Orm;
         _orm.CodeFirst.SyncStructure<WebUserEntity>();
 
         MigrateLegacyUsers();
@@ -115,7 +117,7 @@ public sealed class WebUserStore
     /// <summary>从旧版独立的 <c>settings.db</c> 搬账号（新库里已有账号就不动）。</summary>
     private void MigrateLegacyUsers()
     {
-        string databasePath = TinyLabelDatabase.CurrentPath;
+        string databasePath = _database.Path;
         string? directory = Path.GetDirectoryName(databasePath);
 
         if (string.IsNullOrEmpty(directory))

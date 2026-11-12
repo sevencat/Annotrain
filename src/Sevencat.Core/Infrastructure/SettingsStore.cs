@@ -27,13 +27,15 @@ public sealed class SettingsStore
         PropertyNameCaseInsensitive = true,
     };
 
+    private readonly TinyLabelDatabase _database;
     private readonly IFreeSql _orm;
 
-    public SettingsStore(IFreeSql orm)
+    public SettingsStore(TinyLabelDatabase database)
     {
-        ArgumentNullException.ThrowIfNull(orm);
+        ArgumentNullException.ThrowIfNull(database);
 
-        _orm = orm;
+        _database = database;
+        _orm = database.Orm;
         _orm.CodeFirst.SyncStructure<SettingEntity>();
 
         // 旧版数据目录里的 settings.db 比 %APPDATA% 的 settings.json 新，先迁库；两边都有时以库为准
@@ -42,7 +44,7 @@ public sealed class SettingsStore
     }
 
     /// <summary>配置数据库文件绝对路径（就是当前工作库）。</summary>
-    public string FilePath => TinyLabelDatabase.CurrentPath;
+    public string FilePath => _database.Path;
 
     public AppSettings Load()
     {

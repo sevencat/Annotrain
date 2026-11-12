@@ -28,9 +28,9 @@ internal static class Program
         {
             // 导入写的就是 --output 目录里的 annotrain.db：库跟着它走（--db 显式指定时以 --db 为准）
             AppDataPaths.Initialize(command.DestinationPath);
-            TinyLabelDatabase.Initialize(AppDataPaths.ResolveDatabasePath(args));
 
-            return ImportCommandRunner.RunAsync(command).GetAwaiter().GetResult();
+            return ImportCommandRunner.RunAsync(command, AppDataPaths.ResolveDatabasePath(args))
+                .GetAwaiter().GetResult();
         }
 
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

@@ -18,11 +18,61 @@ namespace Sevencat.Label.App.Views;
 
 public partial class MainWindow : Window
 {
+    // 由容器注入；XAML 预览用的无参构造下都是 null（预览里点按钮不做事）
+    private readonly WebUserStore? _users;
+    private readonly LabelDatasetImportService? _importer;
+    private readonly TinyLabelClassService? _classService;
+    private readonly AppSettings? _settings;
+    private readonly SettingsStore? _settingsStore;
+    private readonly BlobStoreRegistry? _registry;
+    private readonly TinyLabelDatabase? _database;
+
+    /// <summary>XAML 预览用。</summary>
     public MainWindow() => InitializeComponent();
+
+    public MainWindow(
+        MainWindowViewModel viewModel,
+        StartupOptions startup,
+        WebUserStore users,
+        LabelDatasetImportService importer,
+        TinyLabelClassService classService,
+        AppSettings settings,
+        SettingsStore settingsStore,
+        BlobStoreRegistry registry,
+        TinyLabelDatabase database) : this()
+    {
+        _users = users;
+        _importer = importer;
+        _classService = classService;
+        _settings = settings;
+        _settingsStore = settingsStore;
+        _registry = registry;
+        _database = database;
+
+        DataContext = viewModel;
+
+        // 命令行指定了目录就打开它（--annotate 再进首图标注），否则回到上次的数据目录
+        Opened += async (_, _) => await OpenStartupWorkspaceAsync(viewModel, startup);
+    }
 
     private static Localizer Loc => Localizer.Instance;
 
-    private IServiceProvider? Services => (Application.Current as App)?.Services;
+    private async Task OpenStartupWorkspaceAsync(MainWindowViewModel viewModel, StartupOptions startup)
+    {
+        if (startup.AnnotateFolder is { } annotateFolder)
+        {
+            await viewModel.OpenWorkspaceAsync(annotateFolder);
+            await AnnotateSelectedAsync();
+        }
+        else if (startup.OpenFolder is { } folder)
+        {
+            await viewModel.OpenWorkspaceAsync(folder);
+        }
+        else
+        {
+            await viewModel.OpenLastWorkspaceAsync();
+        }
+    }
 
     // ── 顶栏：Web 入口 / 数据目录 / 用户 / 关于 / 日志 ──────────────────────────
 
@@ -88,7 +138,7 @@ public partial class MainWindow : Window
 
     private async void OnUserManagement(object? sender, RoutedEventArgs e)
     {
-        if (Services?.GetService<WebUserStore>() is not { } users)
+        if (_users is not { } users)
         {
             return;
         }
@@ -240,9 +290,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        LabelDatasetImportService? importer = Services?.GetService<LabelDatasetImportService>();
-
-        if (importer is null)
+        if (_importer is not { } importer)
         {
             return;
         }
@@ -348,9 +396,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        TinyLabelClassService? service = Services?.GetService<TinyLabelClassService>();
-
-        if (service is null)
+        if (_classService is not { } service)
         {
             return;
         }
@@ -469,9 +515,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        IServiceProvider? services = Services;
-
-        if (services is null)
+        if (_settings is null || _settingsStore is null || _registry is null || _database is null)
         {
             viewModel.Report("服务容器不可用，标注窗口打不开");
             return;
@@ -479,21 +523,18 @@ public partial class MainWindow : Window
 
         try
         {
-            AppSettings settings = services.GetRequiredService<AppSettings>();
-            SettingsStore settingsStore = services.GetRequiredService<SettingsStore>();
-            BlobStoreRegistry registry = services.GetRequiredService<BlobStoreRegistry>();
-
             long projectId = viewModel.SelectedProject.Id;
 
             // 一次开窗：当前这张 + 本页后面还没标注的（保存并继续在同窗口换图，不关窗重开）
-            List<AnnotationTarget> targets = BuildAnnotationQueue(viewModel, item, registry);
+            List<AnnotationTarget> targets = BuildAnnotationQueue(viewModel, item, _registry);
 
             var window = new AnnotationWindow(
+                _database,
                 projectId,
                 targets,
                 viewModel.Classes,
-                settings,
-                settingsStore);
+                _settings,
+                _settingsStore);
 
             await window.ShowDialog<AnnotationOutcome>(this);
 

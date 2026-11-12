@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Localization;
 using Sevencat.Train.App.ViewModels;
@@ -20,7 +21,11 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        string[]? args = (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Args;
         var services = new ServiceCollection();
+
+        // 库（含界面配置）跟着数据目录走：--db / ANNOTRAIN_DB 可另指，文件不在就建空库
+        services.AddAnnotrainDatabase(AppDataPaths.ResolveDatabasePath(args));
         services.AddAnnotrainCore("train");
 
         // 真训练引擎（TorchSharp）：替换 Core 里的干跑实现，必须在 AddAnnotrainCore 之后。

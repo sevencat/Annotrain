@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FreeSql;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 
@@ -75,7 +76,7 @@ public sealed class TinyLabelRevisionConflictException(long imageId, int expecte
 /// 标注 Web 端的任务流：下一张 / 抢图 / 放租约 / 跳过 / 退回、标注读写、按状态统计。
 /// 桌面端不走这里（它直接编辑选中的图），所以这段只在 Web 服务端用。
 /// </summary>
-public sealed class TinyLabelTaskService
+public sealed class TinyLabelTaskService(IFreeSql orm)
 {
     /// <summary>租约时长；前端每 4 分钟自动续一次，超时后别人可以接手。</summary>
     public static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
@@ -94,10 +95,7 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        return Task.FromResult(FindTask(database, imageId));
+        return Task.FromResult(FindTask(orm, imageId));
     }
 
     /// <summary>
@@ -115,11 +113,9 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
         DateTime now = DateTime.UtcNow;
 
-        List<ImageEntity> candidates = database.Orm.Select<ImageEntity>()
+        List<ImageEntity> candidates = orm.Select<ImageEntity>()
             .Where(row => row.ProjectId == projectId && row.State == StatePending)
             .OrderBy(row => row.Id)
             .ToList()
@@ -135,7 +131,7 @@ public sealed class TinyLabelTaskService
             ? candidates.FirstOrDefault(row => row.Id > after) ?? candidates[0]
             : candidates[0];
 
-        return Task.FromResult<TinyLabelImageTask?>(ClaimCore(database, picked, userId, now, lease));
+        return Task.FromResult<TinyLabelImageTask?>(ClaimCore(orm, picked, userId, now, lease));
     }
 
     /// <summary>抢指定图：被别人有效占用时抛 <see cref="TinyLabelImageLockedException"/>。</summary>
@@ -149,17 +145,15 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
         DateTime now = DateTime.UtcNow;
-        ImageEntity row = Require(database, imageId);
+        ImageEntity row = Require(orm, imageId);
 
         if (row.LockedBy is not null && row.LockedBy != userId && row.LockExpiresAt > now)
         {
-            throw new TinyLabelImageLockedException(FindTask(database, imageId)!);
+            throw new TinyLabelImageLockedException(FindTask(orm, imageId)!);
         }
 
-        return Task.FromResult(ClaimCore(database, row, userId, now, lease));
+        return Task.FromResult(ClaimCore(orm, row, userId, now, lease));
     }
 
     /// <summary>放开租约（只放自己的；别人的租约不动）。</summary>
@@ -172,10 +166,7 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        database.Orm.Update<ImageEntity>()
+        orm.Update<ImageEntity>()
             .Where(row => row.Id == imageId && row.LockedBy == userId)
             .Set(row => row.LockedBy, (long?)null)
             .Set(row => row.LockExpiresAt, (DateTime?)null)
@@ -196,12 +187,10 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-        ImageEntity row = Require(database, imageId);
+        ImageEntity row = Require(orm, imageId);
         DateTime now = DateTime.UtcNow;
 
-        database.Orm.Update<ImageEntity>()
+        orm.Update<ImageEntity>()
             .Where(item => item.Id == imageId)
             .Set(item => item.State, StateSkipped)
             .Set(item => item.AssigneeId, row.AssigneeId ?? userId)
@@ -213,7 +202,7 @@ public sealed class TinyLabelTaskService
             .Set(item => item.UpdatedAt, now)
             .ExecuteAffrows();
 
-        return Task.FromResult(FindTask(database, imageId)!);
+        return Task.FromResult(FindTask(orm, imageId)!);
     }
 
     /// <summary>退回池子：清掉负责人与租约，回到 <c>pending</c> 等别人接。</summary>
@@ -227,12 +216,10 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-        Require(database, imageId);
+        Require(orm, imageId);
         DateTime now = DateTime.UtcNow;
 
-        database.Orm.Update<ImageEntity>()
+        orm.Update<ImageEntity>()
             .Where(item => item.Id == imageId)
             .Set(item => item.State, StatePending)
             .Set(item => item.AssigneeId, (long?)null)
@@ -244,7 +231,7 @@ public sealed class TinyLabelTaskService
             .Set(item => item.UpdatedAt, now)
             .ExecuteAffrows();
 
-        return Task.FromResult(FindTask(database, imageId)!);
+        return Task.FromResult(FindTask(orm, imageId)!);
     }
 
     public Task<TinyLabelAnnotationDoc?> GetAnnotationAsync(
@@ -255,10 +242,7 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        AnnotationEntity? row = database.Orm.Select<AnnotationEntity>()
+        AnnotationEntity? row = orm.Select<AnnotationEntity>()
             .Where(item => item.ImageId == imageId)
             .First();
 
@@ -290,9 +274,7 @@ public sealed class TinyLabelTaskService
             throw new InvalidDataException(Text.Get("Error.LabelFileInvalidJson"), ex);
         }
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-        ImageEntity image = Require(database, imageId);
+        ImageEntity image = Require(orm, imageId);
 
         if (image.Revision != expectedRevision)
         {
@@ -303,9 +285,9 @@ public sealed class TinyLabelTaskService
         int revision = expectedRevision + 1;
         string state = image.State is StateExcluded or StateReviewed ? image.State : StateLabeled;
 
-        database.Orm.Ado.Transaction(() =>
+        orm.Ado.Transaction(() =>
         {
-            database.Orm.Update<ImageEntity>()
+            orm.Update<ImageEntity>()
                 .Where(item => item.Id == imageId && item.Revision == expectedRevision)
                 .Set(item => item.Revision, revision)
                 .Set(item => item.State, state)
@@ -313,7 +295,7 @@ public sealed class TinyLabelTaskService
                 .Set(item => item.UpdatedAt, now)
                 .ExecuteAffrows();
 
-            int updated = database.Orm.Update<AnnotationEntity>()
+            int updated = orm.Update<AnnotationEntity>()
                 .Where(item => item.ImageId == imageId)
                 .Set(item => item.DocJson, docJson)
                 .Set(item => item.Revision, revision)
@@ -323,7 +305,7 @@ public sealed class TinyLabelTaskService
 
             if (updated == 0)
             {
-                database.Orm.Insert(new AnnotationEntity
+                orm.Insert(new AnnotationEntity
                 {
                     ImageId = imageId,
                     ProjectId = image.ProjectId,
@@ -352,15 +334,12 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        if (!database.Orm.Select<ProjectEntity>().Where(row => row.Id == projectId).Any())
+        if (!orm.Select<ProjectEntity>().Where(row => row.Id == projectId).Any())
         {
             return Task.FromResult<TinyLabelProjectStats?>(null);
         }
 
-        List<ImageEntity> images = database.Orm.Select<ImageEntity>()
+        List<ImageEntity> images = orm.Select<ImageEntity>()
             .Where(row => row.ProjectId == projectId)
             .ToList();
 
@@ -387,7 +366,7 @@ public sealed class TinyLabelTaskService
     }
 
     private static TinyLabelImageTask ClaimCore(
-        TinyLabelDatabase database,
+        IFreeSql orm,
         ImageEntity row,
         long userId,
         DateTime now,
@@ -395,7 +374,7 @@ public sealed class TinyLabelTaskService
     {
         DateTime expires = now.Add(lease ?? DefaultLease);
 
-        database.Orm.Update<ImageEntity>()
+        orm.Update<ImageEntity>()
             .Where(item => item.Id == row.Id)
             .Set(item => item.LockedBy, userId)
             .Set(item => item.LockExpiresAt, expires)
@@ -403,7 +382,7 @@ public sealed class TinyLabelTaskService
             .Set(item => item.UpdatedAt, now)
             .ExecuteAffrows();
 
-        return FindTask(database, row.Id)!;
+        return FindTask(orm, row.Id)!;
     }
 
     private static bool CanTake(ImageEntity row, long userId, DateTime now)
@@ -413,9 +392,9 @@ public sealed class TinyLabelTaskService
                || row.LockExpiresAt is null
                || row.LockExpiresAt <= now);
 
-    private static TinyLabelImageTask? FindTask(TinyLabelDatabase database, long imageId)
+    private static TinyLabelImageTask? FindTask(IFreeSql orm, long imageId)
     {
-        ImageEntity? row = database.Orm.Select<ImageEntity>()
+        ImageEntity? row = orm.Select<ImageEntity>()
             .Where(item => item.Id == imageId)
             .First();
 
@@ -424,7 +403,7 @@ public sealed class TinyLabelTaskService
             return null;
         }
 
-        bool hasAnnotation = database.Orm.Select<AnnotationEntity>()
+        bool hasAnnotation = orm.Select<AnnotationEntity>()
             .Where(item => item.ImageId == imageId)
             .Any();
 
@@ -449,8 +428,8 @@ public sealed class TinyLabelTaskService
             hasAnnotation);
     }
 
-    private static ImageEntity Require(TinyLabelDatabase database, long imageId)
-        => database.Orm.Select<ImageEntity>().Where(item => item.Id == imageId).First()
+    private static ImageEntity Require(IFreeSql orm, long imageId)
+        => orm.Select<ImageEntity>().Where(item => item.Id == imageId).First()
            ?? throw new KeyNotFoundException(Text.Format("Error.ImageNotFound", imageId));
 
     private static TinyLabelAnnotationDoc ToDoc(AnnotationEntity row)

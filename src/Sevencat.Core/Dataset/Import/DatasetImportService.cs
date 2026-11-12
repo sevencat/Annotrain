@@ -21,6 +21,7 @@ namespace Sevencat.Core.Dataset.Import;
 /// 多个 split 的类别取并集，顺序按首次出现；类别下标在写入时按并集重新映射。
 /// </remarks>
 public sealed class DatasetImportService(
+    TinyLabelDatabase database,
     IDatasetProbe probe,
     IEnumerable<IDatasetStoreProvider> providers,
     BlobStoreRegistry registry,
@@ -72,10 +73,10 @@ public sealed class DatasetImportService(
 
         Directory.CreateDirectory(options.Destination.Root);
 
-        // 导入只写当前工作库（桌面端就是当前数据目录，CLI 的 --output 在启动时定）：
-        // 目标目录还没有库就先建一个，已经定过就复用——不另开连接往第二个库里写
-        string databasePath = TinyLabelWorkspace.EnsureDatabase(options.Destination);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
+        // 导入只写当前工作库（桌面端就是当前数据目录，CLI 的 --output 在启动时定成当前库）：
+        // 目标目录必须就是库所在目录，不另开连接往第二个库里写
+        RequireSameDirectory(options.Destination, database.Path);
+
         IBlobStore destination = registry.Get(options.Destination);
 
         long projectId = CreateProject(database, options, format, classes);
@@ -171,7 +172,7 @@ public sealed class DatasetImportService(
         DatasetImportReport report = new(
             format,
             options.Source,
-            databasePath,
+            database.Path,
             projectId,
             importedSplits,
             perSplit,
@@ -188,7 +189,7 @@ public sealed class DatasetImportService(
             "数据集导入完成：{Summary}，项目 {ProjectId}，库 {Database}，耗时 {Duration}",
             report.Summary,
             projectId,
-            databasePath,
+            database.Path,
             report.Duration);
 
         return report;
@@ -629,6 +630,21 @@ public sealed class DatasetImportService(
         if (!destination.IsFile)
         {
             throw new NotSupportedException(Text.Get("Error.ImportTargetNotLocal"));
+        }
+    }
+
+    /// <summary>导入目标目录必须就是当前库所在目录（库路径启动时定死，不能借导入往第二个库里写）。</summary>
+    private static void RequireSameDirectory(StorageLocation destination, string databasePath)
+    {
+        string folder = Path.GetDirectoryName(databasePath) ?? string.Empty;
+
+        if (!string.Equals(
+                Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),
+                Path.GetFullPath(destination.Root).TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                Text.Format("Error.DatabasePathLocked", databasePath, TinyLabelWorkspace.DatabasePath(destination)));
         }
     }
 

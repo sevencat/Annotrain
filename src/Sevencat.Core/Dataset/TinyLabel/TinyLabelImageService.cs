@@ -76,6 +76,7 @@ public sealed record TinyLabelImageImportReport(int Imported, int Skipped, IRead
 /// </list>
 /// </summary>
 public sealed class TinyLabelImageService(
+    IFreeSql orm,
     IImageInfoSource infoSource,
     ILogger<TinyLabelImageService>? logger = null)
 {
@@ -95,11 +96,8 @@ public sealed class TinyLabelImageService(
         pageSize = Math.Clamp(pageSize, 1, 500);
         pageIndex = Math.Max(0, pageIndex);
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
         // 过滤 / 排序 / 分页全部在 SQL 里做：图片上万条的项目也不能整表读进内存再 LINQ
-        ISelect<ImageEntity> query = database.Orm
+        ISelect<ImageEntity> query = orm
             .Select<ImageEntity>()
             .Where(row => row.ProjectId == projectId);
 
@@ -133,8 +131,8 @@ public sealed class TinyLabelImageService(
             .ToList();
 
         // 最后标注信息与用户显示名都只查这一页的 20 条，避免把整项目标注原文读出来
-        Dictionary<long, (long UserId, DateTime At)> stamps = ReadAnnotationStamps(database, window);
-        Dictionary<long, string> users = ReadUserNames(database);
+        Dictionary<long, (long UserId, DateTime At)> stamps = ReadAnnotationStamps(orm, window);
+        Dictionary<long, string> users = ReadUserNames(orm);
 
         List<TinyLabelImageRow> page = [.. window.Select(row =>
         {
@@ -164,7 +162,7 @@ public sealed class TinyLabelImageService(
 
     /// <summary>这一页图片的标注时间与标注人（<c>annotations</c> 行，没有标注就没有条目）。</summary>
     private static Dictionary<long, (long UserId, DateTime At)> ReadAnnotationStamps(
-        TinyLabelDatabase database,
+        IFreeSql orm,
         IReadOnlyList<ImageEntity> window)
     {
         if (window.Count == 0)
@@ -175,7 +173,7 @@ public sealed class TinyLabelImageService(
         List<long> ids = [.. window.Select(row => row.Id)];
 
         // 只取时间与用户 Id，不把 DocJson 整段读出来
-        List<AnnotationStamp> rows = database.Orm
+        List<AnnotationStamp> rows = orm
             .Select<AnnotationEntity>()
             .Where(row => ids.Contains(row.ImageId))
             .ToList(row => new AnnotationStamp
@@ -189,11 +187,11 @@ public sealed class TinyLabelImageService(
     }
 
     /// <summary><c>web_users</c> 的 Id → 显示名；库里没有这张表（纯桌面端项目）就返回空。</summary>
-    private Dictionary<long, string> ReadUserNames(TinyLabelDatabase database)
+    private Dictionary<long, string> ReadUserNames(IFreeSql orm)
     {
         try
         {
-            bool exists = database.Orm.Ado.Query<int>(
+            bool exists = orm.Ado.Query<int>(
                 "select count(1) from sqlite_master where type='table' and name='web_users'")[0] > 0;
 
             if (!exists)
@@ -201,7 +199,7 @@ public sealed class TinyLabelImageService(
                 return [];
             }
 
-            List<WebUserNameRow> rows = database.Orm.Ado
+            List<WebUserNameRow> rows = orm.Ado
                 .Query<WebUserNameRow>("select Id, DisplayName from web_users");
 
             return rows
@@ -262,10 +260,7 @@ public sealed class TinyLabelImageService(
         ArgumentNullException.ThrowIfNull(root);
         ArgumentException.ThrowIfNullOrWhiteSpace(state);
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        var update = database.Orm.Update<ImageEntity>()
+        var update = orm.Update<ImageEntity>()
             .Where(row => row.Id == imageId)
             .Set(row => row.State, state.Trim().ToLowerInvariant())
             .Set(row => row.UpdatedAt, DateTime.UtcNow);
@@ -291,10 +286,7 @@ public sealed class TinyLabelImageService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        ImageEntity? image = database.Orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
+        ImageEntity? image = orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
 
         if (image is null)
         {
@@ -305,9 +297,9 @@ public sealed class TinyLabelImageService(
             ? "excluded"
             : "pending";
 
-        database.Orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
+        orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
 
-        database.Orm.Update<ImageEntity>()
+        orm.Update<ImageEntity>()
             .Where(row => row.Id == imageId)
             .Set(row => row.State, next)
             .Set(row => row.Revision, image.Revision + 1)
@@ -328,23 +320,20 @@ public sealed class TinyLabelImageService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        ImageEntity? image = database.Orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
+        ImageEntity? image = orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
 
         if (image is null)
         {
             return Task.FromResult(false);
         }
 
-        ProjectEntity? project = database.Orm
+        ProjectEntity? project = orm
             .Select<ProjectEntity>()
             .Where(row => row.Id == image.ProjectId)
             .First();
 
-        database.Orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
-        database.Orm.Delete<ImageEntity>().Where(row => row.Id == imageId).ExecuteAffrows();
+        orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
+        orm.Delete<ImageEntity>().Where(row => row.Id == imageId).ExecuteAffrows();
 
         if (project is not null && string.Equals(project.StorageMode, "copy", StringComparison.OrdinalIgnoreCase))
         {
@@ -434,21 +423,18 @@ public sealed class TinyLabelImageService(
         bool copy,
         CancellationToken ct)
     {
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        ProjectEntity project = database.Orm.Select<ProjectEntity>().Where(row => row.Id == projectId).First()
+        ProjectEntity project = orm.Select<ProjectEntity>().Where(row => row.Id == projectId).First()
             ?? throw new InvalidOperationException(Text.Format("Error.ProjectNotFound", projectId));
 
         string projectFolder = TinyLabelWorkspace.EnsureProjectDirectory(root, project.Id);
         string imageFolder = TinyLabelWorkspace.ImageDirectory(root, project.Id);
 
         // 已有图片：按内容哈希 + 相对路径去重
-        HashSet<string> hashes = [.. database.Orm.Select<ImageEntity>()
+        HashSet<string> hashes = [.. orm.Select<ImageEntity>()
             .Where(row => row.ProjectId == projectId)
             .ToList(row => row.Sha256)];
 
-        HashSet<string> paths = [.. database.Orm.Select<ImageEntity>()
+        HashSet<string> paths = [.. orm.Select<ImageEntity>()
             .Where(row => row.ProjectId == projectId)
             .ToList(row => row.FilePath)];
 
@@ -539,12 +525,12 @@ public sealed class TinyLabelImageService(
 
         if (pending.Count > 0)
         {
-            database.Orm.Insert(pending).ExecuteAffrows();
+            orm.Insert(pending).ExecuteAffrows();
         }
 
         if (copy && Directory.Exists(projectFolder))
         {
-            database.Orm.Update<ProjectEntity>()
+            orm.Update<ProjectEntity>()
                 .Where(row => row.Id == projectId)
                 .Set(row => row.StorageMode, "copy")
                 .ExecuteAffrows();

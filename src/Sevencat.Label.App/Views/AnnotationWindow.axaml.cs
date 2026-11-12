@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Label.App.ViewModels;
 
@@ -25,6 +26,7 @@ public partial class AnnotationWindow : Window
 
     /// <summary>从图片清单打开（主界面用）：<paramref name="targets"/> 是这一轮要连续标的图，第一个就是起点。</summary>
     public AnnotationWindow(
+        TinyLabelDatabase database,
         long projectId,
         IReadOnlyList<AnnotationTarget> targets,
         IReadOnlyList<string> classes,
@@ -32,6 +34,7 @@ public partial class AnnotationWindow : Window
         SettingsStore settingsStore) : this()
     {
         _viewModel = new AnnotationViewModel(
+            database,
             projectId,
             targets,
             classes,

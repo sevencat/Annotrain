@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.Import;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Storage;
 using Sevencat.Label;
@@ -103,17 +104,19 @@ internal sealed record ImportCommand(
 
 internal static class ImportCommandRunner
 {
-    public static async Task<int> RunAsync(ImportCommand command)
+    public static async Task<int> RunAsync(ImportCommand command, string databasePath)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
         AttachConsole(-1);
 
-        var services = new ServiceCollection();
-        services.AddAnnotrainCore("label");
-        services.AddAnnotrainLabel();
-
-        using ServiceProvider provider = services.BuildServiceProvider();
+        // 库由容器开（--output 目录里的 annotrain.db），导入服务注入同一个实例
+        using ServiceProvider provider = new ServiceCollection()
+            .AddAnnotrainDatabase(databasePath)
+            .AddAnnotrainCore("label")
+            .AddAnnotrainLabel()
+            .BuildServiceProvider();
 
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Import");
         var importer = provider.GetRequiredService<LabelDatasetImportService>();

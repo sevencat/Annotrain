@@ -40,7 +40,8 @@ public static class SyntheticLabelingSession
         BlobStoreRegistry registry,
         SyntheticImportOptions options,
         ILogger? logger = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        TinyLabelDatabase? current = null)
     {
         ArgumentNullException.ThrowIfNull(images);
         ArgumentNullException.ThrowIfNull(registry);
@@ -56,12 +57,12 @@ public static class SyntheticLabelingSession
         var random = new Random(options.Seed ?? Environment.TickCount);
         var splits = new List<string>();
 
-        using TinyLabelDatabase database = string.Equals(
-            databasePath,
-            TinyLabelDatabase.CurrentPath,
-            StringComparison.OrdinalIgnoreCase)
-            ? TinyLabelDatabase.Current
-            : TinyLabelDatabase.Open(databasePath);
+        // 目标就是当前工作库时复用（不关它），否则另开一个、用完自己关
+        bool reuseCurrent = current is not null
+            && string.Equals(databasePath, current.Path, StringComparison.OrdinalIgnoreCase);
+
+        using TinyLabelDatabase? owned = reuseCurrent ? null : TinyLabelDatabase.Open(databasePath);
+        TinyLabelDatabase database = reuseCurrent ? current! : owned!;
 
         long projectId = (long)database.Orm.Insert(new ProjectEntity
         {

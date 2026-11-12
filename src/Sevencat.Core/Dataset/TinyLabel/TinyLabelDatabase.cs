@@ -10,20 +10,16 @@ namespace Sevencat.Core.Dataset.TinyLabel;
 /// 表结构、索引都写在实体上，打开旧库时由 <c>SyncStructure</c> 自动补齐缺的表/列/索引。
 /// DB 必须落在本地可写路径（WAL 需要随机写），图片可以另外指向远端。
 /// <para>
-/// 当前工作库是启动时 <see cref="Initialize"/> 建好的唯一实例，全局用 <see cref="Current"/> 取，
-/// 不要每次拼路径再开一遍：FreeSql 自带连接池，建表检查、PRAGMA、结构同步只该做一次。
-/// 库路径在启动时就固定（参数 / 环境变量），运行期不换库。
+/// 打开一次就是一个实例，进程里只该有一个：启动时由容器（<c>AddAnnotrainDatabase</c>）建好注册成单例，
+/// 需要库的类注入 <see cref="IFreeSql"/>（或这个实例本身），别再每次拼路径开一遍——
+/// FreeSql 自带连接池，建表检查、PRAGMA、结构同步只该做一次。库路径启动时定死，运行期不换库。
 /// </para>
 /// </summary>
 public sealed class TinyLabelDatabase : IDisposable
 {
-    private static readonly object Sync = new();
-
-    private static TinyLabelDatabase? _current;
-    private static string? _currentPath;
-
-    /// <summary>独立打开的库（<see cref="Open"/>）要自己负责关；当前工作库不归调用方关。</summary>
+    /// <summary>由 <see cref="Open"/> 打开的实例要负责关；不是本实例打开的（理论上没有）就不动它。</summary>
     private readonly bool _owned;
+
     private bool _disposed;
 
     private TinyLabelDatabase(IFreeSql orm, string path, bool owned)
@@ -39,71 +35,17 @@ public sealed class TinyLabelDatabase : IDisposable
     public string Path { get; }
 
     /// <summary>
-    /// 当前工作库：启动时 <see cref="Connect"/> 一次，之后全局直接用。
-    /// 还没连过（没打开数据目录）时抛 <see cref="InvalidOperationException"/>。
-    /// </summary>
-    public static TinyLabelDatabase Current => _current
-        ?? throw new InvalidOperationException(Text.Get("Error.DatabaseNotInitialized"));
-
-    /// <summary>当前工作库的路径；还没连过时是空串。</summary>
-    public static string CurrentPath => _currentPath ?? string.Empty;
-
-    /// <summary>当前工作库是否已经初始化（启动时定过路径）。</summary>
-    public static bool IsInitialized => _current is not null;
-
-    /// <summary>
-    /// 初始化进程内唯一的当前工作库。路径只在这里定一次（启动参数 <c>--db</c> / 环境变量
-    /// <c>ANNOTRAIN_DB</c> / 数据目录）：同一路径重复调用直接返回；换成别的路径直接抛，
-    /// 运行期不换库，所以这里不做关闭旧库这种事。
-    /// </summary>
-    public static TinyLabelDatabase Initialize(string path, bool createIfMissing = true)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        string full = System.IO.Path.GetFullPath(path);
-
-        lock (Sync)
-        {
-            if (_current is not null)
-            {
-                if (!string.Equals(_currentPath, full, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        Text.Format("Error.DatabasePathLocked", _currentPath, full));
-                }
-
-                return _current;
-            }
-
-            _current = Create(full, createIfMissing, owned: false);
-            _currentPath = full;
-            return _current;
-        }
-    }
-
-    /// <summary>测试夹具专用：丢掉当前实例，让下一个用例用新的临时目录。生产代码不要调。</summary>
-    internal static void Reset()
-    {
-        lock (Sync)
-        {
-            _current?.DisposeCore();
-            _current = null;
-            _currentPath = null;
-        }
-    }
-
-    /// <summary>
-    /// 打开一个**不是**当前工作库的库（导入到别的目录、外部数据集、造模拟数据）：
-    /// 独立连接，用完自己 <see cref="Dispose"/>。
+    /// 打开库文件：文件不存在且 <paramref name="createIfMissing"/> 为真就建空库并同步结构。
+    /// 返回值自己负责 <see cref="Dispose"/>（容器里的那份由容器释放）。
     /// </summary>
     public static TinyLabelDatabase Open(string path, bool createIfMissing = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        return Create(System.IO.Path.GetFullPath(path), createIfMissing, owned: true);
+        return Create(System.IO.Path.GetFullPath(path), createIfMissing);
     }
 
-    private static TinyLabelDatabase Create(string full, bool createIfMissing, bool owned)
+    private static TinyLabelDatabase Create(string full, bool createIfMissing)
     {
         bool isNew = !File.Exists(full);
 
@@ -124,7 +66,7 @@ public sealed class TinyLabelDatabase : IDisposable
             .UseAutoSyncStructure(false)
             .Build();
 
-        var database = new TinyLabelDatabase(orm, full, owned);
+        var database = new TinyLabelDatabase(orm, full, owned: true);
         database.EnsureSchema(isNew);
         return database;
     }
@@ -205,18 +147,9 @@ public sealed class TinyLabelDatabase : IDisposable
             .First();
     }
 
-    /// <summary>当前工作库不在这里关：连接要留给整个进程用，随进程退出一起结束。</summary>
     public void Dispose()
     {
-        if (_owned)
-        {
-            DisposeCore();
-        }
-    }
-
-    private void DisposeCore()
-    {
-        if (_disposed)
+        if (!_owned || _disposed)
         {
             return;
         }

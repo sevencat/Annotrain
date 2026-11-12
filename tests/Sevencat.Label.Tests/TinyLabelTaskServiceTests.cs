@@ -14,13 +14,17 @@ public class TinyLabelTaskServiceTests
     public async Task NextImage_Lease_SkipReturn_AndAnnotationRevision_Work()
     {
         using var workspace = new TestWorkspace();
-        using ServiceProvider provider = BuildProvider();
+
+        string datasetRoot = Path.Combine(workspace.Root, "dataset");
+        TinyLabelDatabase database = workspace.OpenDatabaseAt(
+            Path.Combine(datasetRoot, TinyLabelProjectCatalog.DefaultDatabaseFile));
+
+        using ServiceProvider provider = BuildProvider(database);
 
         var registry = provider.GetRequiredService<BlobStoreRegistry>();
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
         var tasks = provider.GetRequiredService<TinyLabelTaskService>();
 
-        string datasetRoot = Path.Combine(workspace.Root, "dataset");
         var generator = new SyntheticImageGenerator(new SyntheticOptions(
             ImageCount: 5,
             Width: 64,
@@ -32,7 +36,8 @@ public class TinyLabelTaskServiceTests
         await SyntheticLabelingSession.ImportAsync(
             generator.Generate(),
             registry,
-            new SyntheticImportOptions(datasetRoot));
+            new SyntheticImportOptions(datasetRoot),
+            current: database);
 
         // 模拟流程生成的图都是 labeled，这里退回 pending 当成待标池
         ResetToPending(datasetRoot);
@@ -102,9 +107,11 @@ public class TinyLabelTaskServiceTests
         database.Orm.Delete<AnnotationEntity>().Where(row => row.ImageId > 0).ExecuteAffrows();
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(TinyLabelDatabase database)
     {
         var services = new ServiceCollection();
+        services.AddSingleton(database);
+        services.AddSingleton(database.Orm);
         services.AddAnnotrainDatasets();
         services.AddLogging();
 

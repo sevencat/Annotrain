@@ -24,7 +24,7 @@ public class DatasetImportTests
 
         int expectedBoxes = WriteYoloDataset(source);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(target.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
 
         DatasetImportReport report = await importer.ImportAsync(new DatasetImportOptions(
@@ -74,7 +74,7 @@ public class DatasetImportTests
 
         WriteCocoDataset(source);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(target.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
 
         DatasetImportReport report = await importer.ImportAsync(new DatasetImportOptions(
@@ -99,10 +99,9 @@ public class DatasetImportTests
 
         WriteDbProject(workspace);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
         var resolver = provider.GetRequiredService<DatasetStoreResolver>();
         var exportService = provider.GetRequiredService<DatasetExportService>();
-        var importer = provider.GetRequiredService<DatasetImportService>();
 
         DatasetOpenResult opened = await resolver.OpenAsync(StorageLocation.FromPath(workspace.Root));
 
@@ -116,6 +115,10 @@ public class DatasetImportTests
         {
             (opened.Store as IDisposable)?.Dispose();
         }
+
+        // 导入写的是当前库：换个库（reopened 目录）就换套容器
+        using ServiceProvider importProvider = BuildProvider(reopened.OpenDatabase());
+        var importer = importProvider.GetRequiredService<DatasetImportService>();
 
         DatasetImportReport report = await importer.ImportAsync(new DatasetImportOptions(
             StorageLocation.FromPath(export.Root),
@@ -136,7 +139,7 @@ public class DatasetImportTests
 
         int expectedBoxes = WriteYoloDataset(source);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(target.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
 
         await importer.ImportAsync(new DatasetImportOptions(
@@ -163,7 +166,7 @@ public class DatasetImportTests
 
         WriteYoloDataset(source);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(target.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
         var browser = provider.GetRequiredService<LabelProjectBrowser>();
@@ -197,7 +200,7 @@ public class DatasetImportTests
     {
         using var empty = new TestWorkspace();
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(empty.OpenDatabase());
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
 
         IReadOnlyList<TinyLabelProjectSummary> projects =
@@ -211,13 +214,11 @@ public class DatasetImportTests
     {
         using var workspace = new TestWorkspace();
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
         var service = provider.GetRequiredService<TinyLabelProjectService>();
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
 
-        // 打开数据目录时初始化空库；「新建项目」只往库里插一行，不再建库
-        TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(workspace.Root));
-
+        // 库启动时就建好；「新建项目」只往库里插一行
         long projectId = await service.CreateAsync(
             StorageLocation.FromPath(workspace.Root),
             "空项目",
@@ -238,7 +239,7 @@ public class DatasetImportTests
     {
         using var workspace = new TestWorkspace();
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
         var service = provider.GetRequiredService<TinyLabelProjectService>();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -251,7 +252,7 @@ public class DatasetImportTests
         using var workspace = new TestWorkspace();
         WriteYoloDataset(workspace);
 
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => importer.ImportAsync(new DatasetImportOptions(
@@ -269,9 +270,7 @@ public class DatasetImportTests
         WriteYoloDataset(source);
 
         // 当前库启动时就定了：导入只能写它，不能借 Destination 另开一个库
-        TinyLabelDatabase.Initialize(Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile));
-
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
         var importer = provider.GetRequiredService<DatasetImportService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => importer.ImportAsync(new DatasetImportOptions(
@@ -449,10 +448,12 @@ public class DatasetImportTests
         return -1;
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(TinyLabelDatabase database)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(database);
+        services.AddSingleton(database.Orm);
         services.AddAnnotrainDatasets();
         services.AddAnnotrainLabel();
         return services.BuildServiceProvider();

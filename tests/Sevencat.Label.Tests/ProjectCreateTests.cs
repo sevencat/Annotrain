@@ -14,19 +14,17 @@ public class ProjectCreateTests
     public async Task NewProject_IsDetectedAndOpenableByBrowser()
     {
         using var workspace = new TestWorkspace();
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
 
         var projects = provider.GetRequiredService<TinyLabelProjectService>();
 
-        // 数据目录初始化（建空库）→ 新建项目只插一条记录
-        TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(workspace.Root));
-
+        // 库启动时就建好 → 新建项目只插一条记录
         long projectId = await projects.CreateAsync(StorageLocation.FromPath(workspace.Root), "新项目");
 
         string databasePath = Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
         Assert.True(File.Exists(databasePath), $"数据库文件不存在：{databasePath}");
 
-        // 库连接是进程内常驻的（TinyLabelDatabase.Current），读文件头要按共享读打开
+        // 库连接是容器里的常驻单例，读文件头要按共享读打开
         using var stream = new FileStream(
             databasePath,
             FileMode.Open,
@@ -54,10 +52,12 @@ public class ProjectCreateTests
         Assert.Empty(opened.Images);
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(TinyLabelDatabase database)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(database);
+        services.AddSingleton(database.Orm);
         services.AddAnnotrainDatasets();
         services.AddAnnotrainLabel();
         return services.BuildServiceProvider();

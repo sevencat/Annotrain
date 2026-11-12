@@ -5,7 +5,8 @@ using Sevencat.Core.Storage;
 namespace Sevencat.Core.Dataset.TinyLabel;
 
 /// <summary>
-/// 数据目录（<c>annotrain.db</c> 所在目录）的初始化与检查。
+/// 数据目录（<c>annotrain.db</c> 所在目录）的目录结构与路径工具，只拼路径、不碰连接：
+/// 库由容器启动时打开（<c>AddAnnotrainDatabase</c>），谁要用就注入 <c>IFreeSql</c>。
 /// <para>
 /// 语义要分清：**数据目录**是库的容器，**项目**是库里的一行。
 /// 「新建项目」只往已有的库里插一行；库里没有项目 ≠ 需要新建库。
@@ -67,14 +68,6 @@ public static class TinyLabelWorkspace
         return directory;
     }
 
-    /// <summary>数据目录里是否已经有库文件。</summary>
-    public static bool DatabaseExists(StorageLocation root)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-
-        return root.IsFile && File.Exists(DatabasePath(root));
-    }
-
     /// <summary>数据目录里的库文件路径（唯一拼路径的地方）。</summary>
     public static string DatabasePath(StorageLocation root)
     {
@@ -86,60 +79,5 @@ public static class TinyLabelWorkspace
         }
 
         return Path.Combine(root.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
-    }
-
-    /// <summary>
-    /// 要求当前工作库可用：启动时已经定过库路径就直接用；还没定就按数据目录初始化（库必须存在）。
-    /// 库不存在时抛异常，绝不顺手建库。
-    /// </summary>
-    public static void RequireDatabase(StorageLocation root)
-    {
-        if (TinyLabelDatabase.IsInitialized)
-        {
-            return;
-        }
-
-        string databasePath = DatabasePath(root);
-
-        if (!File.Exists(databasePath))
-        {
-            throw new FileNotFoundException(
-                Text.Format("Error.DatabaseMissing", TinyLabelProjectCatalog.DefaultDatabaseFile),
-                databasePath);
-        }
-
-        TinyLabelDatabase.Initialize(databasePath, createIfMissing: false);
-    }
-
-    /// <summary>
-    /// 让数据目录可用并返回它的库路径：没有当前库就在这里建一个（只建表，不建项目）；
-    /// 已经有当前库时，<paramref name="root"/> 必须就是库所在目录——库路径启动时定死，不能借这个入口写第二个库。
-    /// </summary>
-    public static string EnsureDatabase(StorageLocation root)
-    {
-        ArgumentNullException.ThrowIfNull(root);
-
-        string databasePath = DatabasePath(root);
-
-        if (TinyLabelDatabase.IsInitialized)
-        {
-            string folder = Path.GetDirectoryName(TinyLabelDatabase.CurrentPath) ?? string.Empty;
-
-            if (!string.Equals(
-                    Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(root.Root).TrimEnd(Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    Text.Format("Error.DatabasePathLocked", TinyLabelDatabase.CurrentPath, databasePath));
-            }
-
-            return TinyLabelDatabase.CurrentPath;
-        }
-
-        Directory.CreateDirectory(root.Root);
-        TinyLabelDatabase.Initialize(databasePath);
-
-        return databasePath;
     }
 }

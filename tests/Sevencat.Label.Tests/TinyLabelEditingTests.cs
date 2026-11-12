@@ -14,13 +14,11 @@ public class TinyLabelEditingTests
     public async Task Project_UpdateCloseDelete_Works()
     {
         using var workspace = new TestWorkspace();
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
 
         var projects = provider.GetRequiredService<TinyLabelProjectService>();
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
         StorageLocation root = StorageLocation.FromPath(workspace.Root);
-
-        TinyLabelWorkspace.EnsureDatabase(root);
 
         long projectId = await projects.CreateAsync(root, "原名字", "原备注");
 
@@ -45,12 +43,10 @@ public class TinyLabelEditingTests
     public async Task CreateProject_MakesProjectFolder_UnderIdPrefix()
     {
         using var workspace = new TestWorkspace();
-        using ServiceProvider provider = BuildProvider();
+        using ServiceProvider provider = BuildProvider(workspace.OpenDatabase());
 
         var projects = provider.GetRequiredService<TinyLabelProjectService>();
         StorageLocation root = StorageLocation.FromPath(workspace.Root);
-
-        TinyLabelWorkspace.EnsureDatabase(root);
 
         long projectId = await projects.CreateAsync(root, "带目录的项目");
 
@@ -79,7 +75,12 @@ public class TinyLabelEditingTests
     public async Task Images_QueryImportAndClasses_Work()
     {
         using var workspace = new TestWorkspace();
-        using ServiceProvider provider = BuildProvider();
+
+        string datasetRoot = Path.Combine(workspace.Root, "dataset");
+        TinyLabelDatabase datasetDb = workspace.OpenDatabaseAt(
+            Path.Combine(datasetRoot, TinyLabelProjectCatalog.DefaultDatabaseFile));
+
+        using ServiceProvider provider = BuildProvider(datasetDb);
 
         var registry = provider.GetRequiredService<BlobStoreRegistry>();
         var images = provider.GetRequiredService<TinyLabelImageService>();
@@ -87,7 +88,6 @@ public class TinyLabelEditingTests
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
         var projects = provider.GetRequiredService<TinyLabelProjectService>();
 
-        string datasetRoot = Path.Combine(workspace.Root, "dataset");
         var generator = new SyntheticImageGenerator(new SyntheticOptions(
             ImageCount: 5,
             Width: 64,
@@ -99,7 +99,8 @@ public class TinyLabelEditingTests
         await SyntheticLabelingSession.ImportAsync(
             generator.Generate(),
             registry,
-            new SyntheticImportOptions(datasetRoot));
+            new SyntheticImportOptions(datasetRoot),
+            current: datasetDb);
 
         StorageLocation root = StorageLocation.FromPath(datasetRoot);
         TinyLabelProjectSummary project = Assert.Single(await catalog.ListAsync(root));
@@ -167,15 +168,18 @@ public class TinyLabelEditingTests
                 () => classes.RemoveAsync(root, project.Id, used.Id));
         }
 
-        // 导入图片进新项目：从磁盘复制一张，跳过重复
-        // 一个进程只有一个当前库：下面换到 workspace 根目录测，先把 dataset 那个放掉（只有测试会这么做）
-        TinyLabelDatabase.Reset();
-        TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(workspace.Root));
-        long emptyProject = await projects.CreateAsync(StorageLocation.FromPath(workspace.Root), "空项目");
+        // 导入图片进新项目：从磁盘复制一张，跳过重复。
+        // 库不再是全局共享的：换到 workspace 根目录就另开一个库 + 容器
+        TinyLabelDatabase otherDb = workspace.OpenDatabase();
+        using ServiceProvider other = BuildProvider(otherDb);
+        var otherImages = other.GetRequiredService<TinyLabelImageService>();
+        var otherProjects = other.GetRequiredService<TinyLabelProjectService>();
+
+        long emptyProject = await otherProjects.CreateAsync(StorageLocation.FromPath(workspace.Root), "空项目");
         string sample = Path.Combine(datasetRoot, "projects", project.Id.ToString());
         string source = Directory.EnumerateFiles(sample, "*", SearchOption.AllDirectories).First();
 
-        TinyLabelImageImportReport report = await images.ImportFilesAsync(
+        TinyLabelImageImportReport report = await otherImages.ImportFilesAsync(
             StorageLocation.FromPath(workspace.Root),
             emptyProject,
             [source],
@@ -189,7 +193,7 @@ public class TinyLabelEditingTests
         Assert.True(Directory.Exists(Path.Combine(projectFolder, TinyLabelWorkspace.ThumbsFolderName)));
 
         // 同一张再导一次：按 sha256 去重
-        TinyLabelImageImportReport again = await images.ImportFilesAsync(
+        TinyLabelImageImportReport again = await otherImages.ImportFilesAsync(
             StorageLocation.FromPath(workspace.Root),
             emptyProject,
             [source]);
@@ -197,10 +201,12 @@ public class TinyLabelEditingTests
         Assert.Equal(1, again.Skipped);
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(TinyLabelDatabase database)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(database);
+        services.AddSingleton(database.Orm);
         services.AddAnnotrainDatasets();
         return services.BuildServiceProvider();
     }

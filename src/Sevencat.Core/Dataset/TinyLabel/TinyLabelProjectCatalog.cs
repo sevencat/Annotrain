@@ -1,3 +1,4 @@
+using FreeSql;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
@@ -37,6 +38,7 @@ public sealed record TinyLabelProjectSummary(
 /// 只读库、读完即关，不持有连接；目录里没有库时返回空列表。
 /// </summary>
 public sealed class TinyLabelProjectCatalog(
+    IFreeSql orm,
     BlobStoreRegistry registry,
     ILogger<TinyLabelProjectCatalog>? logger = null)
 {
@@ -62,14 +64,11 @@ public sealed class TinyLabelProjectCatalog(
             return [];
         }
 
-        TinyLabelWorkspace.RequireDatabase(root);
-        TinyLabelDatabase database = TinyLabelDatabase.Current;
-
-        List<ProjectEntity> projects = database.Orm.Select<ProjectEntity>()
+        List<ProjectEntity> projects = orm.Select<ProjectEntity>()
             .OrderBy(project => project.Id)
             .ToList();
 
-        List<ImageEntity> images = database.Orm.Select<ImageEntity>().ToList();
+        List<ImageEntity> images = orm.Select<ImageEntity>().ToList();
 
         Dictionary<long, List<ImageEntity>> byProject = images
             .GroupBy(image => image.ProjectId)

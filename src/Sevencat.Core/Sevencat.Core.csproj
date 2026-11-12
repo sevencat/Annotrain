@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 测试夹具要调 TinyLabelDatabase.Reset() 隔离临时库 -->
+    <!-- 测试要构造 ClassCatalog 等内部类型 -->
     <InternalsVisibleTo Include="Sevencat.Label.Tests" />
   </ItemGroup>
 

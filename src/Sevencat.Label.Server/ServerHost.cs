@@ -53,7 +53,8 @@ public sealed class LabelWebServer : IAsyncDisposable
         builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelClassService>());
         builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelTaskService>());
 
-        // 账号与桌面端共用同一个库/连接池（桌面端容器里的 IFreeSql 单例）
+        // 账号与桌面端共用同一个库/连接池（桌面端容器里的库单例）
+        builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelDatabase>());
         builder.Services.AddSingleton(coreServices.GetRequiredService<IFreeSql>());
         builder.Services.AddSingleton<WebUserStore>();
         builder.Services.AddSingleton(_ => new TokenProtector(options.TokenKeyPath, options.TokenLifetime));

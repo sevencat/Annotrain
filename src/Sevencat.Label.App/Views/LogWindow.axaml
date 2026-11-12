@@ -13,11 +13,11 @@
     <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}"
             CornerRadius="6" Padding="8">
       <ScrollViewer x:Name="LogScroll"
-                    HorizontalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto">
         <SelectableTextBlock Text="{Binding LogText}"
                              FontFamily="Consolas,Menlo,monospace" FontSize="12"
-                             TextWrapping="NoWrap" />
+                             TextWrapping="Wrap" />
       </ScrollViewer>
     </Border>
 
