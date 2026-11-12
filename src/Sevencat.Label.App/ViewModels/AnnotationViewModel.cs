@@ -4,9 +4,9 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FreeSql;
 using Sevencat.Core.Annotation;
 using Sevencat.Core.AutoLabel;
-using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
@@ -55,18 +55,18 @@ public sealed partial class AnnotationViewModel : ObservableObject
     }
 
     public AnnotationViewModel(
-        TinyLabelDatabase database,
+        IFreeSql orm,
         long projectId,
         IReadOnlyList<AnnotationTarget> targets,
         IReadOnlyList<string> classes,
         AppSettings settings,
         SettingsStore settingsStore)
     {
-        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(orm);
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentOutOfRangeException.ThrowIfZero(targets.Count);
 
-        _store = new DatabaseAnnotationStore(database, projectId);
+        _store = new DatabaseAnnotationStore(orm, projectId);
         _settings = settings;
         _settingsStore = settingsStore;
         _targets = targets;
@@ -632,7 +632,7 @@ public sealed partial class AnnotationViewModel : ObservableObject
         _bitmap = null;
         _runner?.Dispose();
         _runner = null;
-        _store?.Dispose();
+        // 库连接归容器，关窗不释放它
     }
 }
 

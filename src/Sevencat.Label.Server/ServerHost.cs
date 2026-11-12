@@ -2,6 +2,7 @@ using FreeSql;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Storage;
 using Sevencat.Label.Server.Data;
 using Sevencat.Label.Server.Security;
@@ -53,9 +54,10 @@ public sealed class LabelWebServer : IAsyncDisposable
         builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelClassService>());
         builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelTaskService>());
 
-        // 账号与桌面端共用同一个库/连接池（桌面端容器里的库单例）
-        builder.Services.AddSingleton(coreServices.GetRequiredService<TinyLabelDatabase>());
+        // 账号与桌面端共用同一个连接池（桌面端容器里的 IFreeSql 单例）；
+        // 不再注册 TinyLabelDatabase —— 那个实例归桌面端容器释放，搬到这里会被 Web 宿主当成自己的单例去 Dispose
         builder.Services.AddSingleton(coreServices.GetRequiredService<IFreeSql>());
+        builder.Services.AddSingleton(coreServices.GetRequiredService<IDatabaseLocation>());
         builder.Services.AddSingleton<WebUserStore>();
         builder.Services.AddSingleton(_ => new TokenProtector(options.TokenKeyPath, options.TokenLifetime));
         builder.Services.AddSingleton<AuthService>();

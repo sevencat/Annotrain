@@ -22,10 +22,12 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         string[]? args = (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Args;
+        StartupOptions startup = StartupOptions.Parse(args);
         var services = new ServiceCollection();
 
         // 库（含界面配置）跟着数据目录走：--db / ANNOTRAIN_DB 可另指，文件不在就建空库
-        services.AddAnnotrainDatabase(AppDataPaths.ResolveDatabasePath(args));
+        services.AddSingleton(startup);
+        services.AddAnnotrainDatabase(startup);
         services.AddAnnotrainCore("train");
 
         // 真训练引擎（TorchSharp）：替换 Core 里的干跑实现，必须在 AddAnnotrainCore 之后。
@@ -49,11 +51,20 @@ public partial class App : Application
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
 
-            // --open <数据集目录>：启动即打开数据集，省去一次选择
-            if (ReadArgument(desktop.Args, "--open") is { } dataset)
+            // --open <数据集目录> 优先；没有命令行参数就恢复上次在 TinyLabel 库里选的项目
+            window.Opened += async (_, _) =>
             {
-                window.Opened += async (_, _) => await viewModel.OpenDatasetAsync(dataset);
-            }
+                if (startup.OpenFolder is { } dataset)
+                {
+                    await viewModel.OpenDatasetAsync(dataset);
+                }
+                else
+                {
+                    await viewModel.RestoreLastLibraryAsync();
+                }
+
+                window.RefreshChartHint();
+            };
 
             desktop.Exit += (_, _) =>
             {
@@ -65,21 +76,4 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static string? ReadArgument(string[]? args, string name)
-    {
-        if (args is null)
-        {
-            return null;
-        }
-
-        for (int index = 0; index < args.Length - 1; index++)
-        {
-            if (string.Equals(args[index], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[index + 1];
-            }
-        }
-
-        return null;
-    }
 }

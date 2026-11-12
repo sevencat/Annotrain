@@ -10,27 +10,3 @@ body,
 body {
   overscroll-behavior: none;
 }
-
-/* Leaflet 在暗色工作台里的底色 */
-.leaflet-container {
-  background: #121215;
-  outline: none;
-}
-
-/* 顶点手柄：geoman/leaflet 默认的 divIcon 是白底黑框，这里统一成蓝点 */
-.leaflet-div-icon.tl-vertex,
-.tl-vertex {
-  width: 12px !important;
-  height: 12px !important;
-  margin: -6px 0 0 -6px !important;
-  background: #ffffff !important;
-  border: 2px solid #1e88e5 !important;
-  border-radius: 50%;
-  box-sizing: border-box;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
-}
-
-/* geoman 的提示气泡跟随暗色主题 */
-.leaflet-pm-toolbar .button-container .leaflet-buttons-control-button {
-  background-color: #2a2a31;
-}

@@ -1,5 +1,4 @@
 using FreeSql;
-using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Label.Server.Security;
 
@@ -7,21 +6,22 @@ namespace Sevencat.Label.Server.Data;
 
 /// <summary>
 /// Web 账号表（<c>annotrain.db</c> 里的 <c>web_users</c>）的读写。
-/// ORM 由容器注入（<see cref="TinyLabelDatabase"/> 的 <c>IFreeSql</c> 单例），不自己开库、不负责关。
+/// ORM 由容器注入（<see cref="IFreeSql"/> 单例），不自己开库、不负责关；迁移旧账号只要 <see cref="IDatabaseLocation"/>。
 /// </summary>
 public sealed class WebUserStore
 {
     private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
 
-    private readonly TinyLabelDatabase _database;
     private readonly IFreeSql _orm;
+    private readonly IDatabaseLocation _location;
 
-    public WebUserStore(TinyLabelDatabase database)
+    public WebUserStore(IFreeSql orm, IDatabaseLocation location)
     {
-        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(orm);
+        ArgumentNullException.ThrowIfNull(location);
 
-        _database = database;
-        _orm = database.Orm;
+        _orm = orm;
+        _location = location;
         _orm.CodeFirst.SyncStructure<WebUserEntity>();
 
         MigrateLegacyUsers();
@@ -117,15 +117,8 @@ public sealed class WebUserStore
     /// <summary>从旧版独立的 <c>settings.db</c> 搬账号（新库里已有账号就不动）。</summary>
     private void MigrateLegacyUsers()
     {
-        string databasePath = _database.Path;
-        string? directory = Path.GetDirectoryName(databasePath);
-
-        if (string.IsNullOrEmpty(directory))
-        {
-            return;
-        }
-
-        string legacy = Path.Combine(directory, AppDataPaths.LegacySettingsDatabaseFile);
+        string databasePath = _location.DatabasePath;
+        string legacy = Path.Combine(_location.DatabaseDirectory, AppDataPaths.LegacySettingsDatabaseFile);
 
         if (string.Equals(legacy, databasePath, StringComparison.OrdinalIgnoreCase) || !File.Exists(legacy))
         {

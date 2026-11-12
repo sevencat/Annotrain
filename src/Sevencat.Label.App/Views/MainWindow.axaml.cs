@@ -3,6 +3,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using FreeSql;
+using Injectio.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.TinyLabel;
@@ -16,6 +18,8 @@ using Sevencat.Label.Server.Data;
 
 namespace Sevencat.Label.App.Views;
 
+/// <summary>主窗口：注册由 Injectio 生成（容器里单例，见 <see cref="App"/> 的注册链）。</summary>
+[RegisterSingleton<MainWindow>]
 public partial class MainWindow : Window
 {
     // 由容器注入；XAML 预览用的无参构造下都是 null（预览里点按钮不做事）
@@ -25,7 +29,7 @@ public partial class MainWindow : Window
     private readonly AppSettings? _settings;
     private readonly SettingsStore? _settingsStore;
     private readonly BlobStoreRegistry? _registry;
-    private readonly TinyLabelDatabase? _database;
+    private readonly IFreeSql? _orm;
 
     /// <summary>XAML 预览用。</summary>
     public MainWindow() => InitializeComponent();
@@ -39,7 +43,7 @@ public partial class MainWindow : Window
         AppSettings settings,
         SettingsStore settingsStore,
         BlobStoreRegistry registry,
-        TinyLabelDatabase database) : this()
+        IFreeSql orm) : this()
     {
         _users = users;
         _importer = importer;
@@ -47,7 +51,7 @@ public partial class MainWindow : Window
         _settings = settings;
         _settingsStore = settingsStore;
         _registry = registry;
-        _database = database;
+        _orm = orm;
 
         DataContext = viewModel;
 
@@ -515,7 +519,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_settings is null || _settingsStore is null || _registry is null || _database is null)
+        if (_settings is null || _settingsStore is null || _registry is null || _orm is null)
         {
             viewModel.Report("服务容器不可用，标注窗口打不开");
             return;
@@ -529,7 +533,7 @@ public partial class MainWindow : Window
             List<AnnotationTarget> targets = BuildAnnotationQueue(viewModel, item, _registry);
 
             var window = new AnnotationWindow(
-                _database,
+                _orm,
                 projectId,
                 targets,
                 viewModel.Classes,

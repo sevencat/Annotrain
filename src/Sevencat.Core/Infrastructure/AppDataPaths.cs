@@ -1,7 +1,8 @@
 namespace Sevencat.Core.Infrastructure;
 
 /// <summary>
-/// 数据根目录：默认在 <c>exe 同级/data</c>，可用命令行 <c>--data &lt;目录&gt;</c> 覆盖。
+/// 数据根目录：默认在 <c>exe 同级/data</c>，可用命令行 <c>--data &lt;目录&gt;</c> 或环境变量
+/// <c>ANNOTRAIN_DATA</c>（含 <c>.env</c> 里写的）覆盖，命令行优先。
 /// <para>
 /// 只有一个库文件 <c>annotrain.db</c>（项目 + 配置 + Web 账号）和日志，
 /// 这样整个程序是"绿色"的：拷走 exe 目录就把数据一起带走。
@@ -15,6 +16,12 @@ public static class AppDataPaths
 
     /// <summary>命令行开关：<c>--db &lt;文件&gt;</c>；不给就跟着数据目录走。</summary>
     public const string DatabaseArgument = "--db";
+
+    /// <summary>环境变量：数据根目录（命令行 <c>--data</c> 优先，其次它，都没有就是默认目录）。</summary>
+    public const string DataVariable = "ANNOTRAIN_DATA";
+
+    /// <summary>环境变量：库文件，压过数据目录里的 <c>annotrain.db</c>。</summary>
+    public const string DatabaseVariable = "ANNOTRAIN_DB";
 
     /// <summary>库文件名（项目、配置、账号都在这个库里；与 <c>TinyLabelProjectCatalog.DefaultDatabaseFile</c> 一致）。</summary>
     public const string ProjectDatabaseFile = "annotrain.db";
@@ -41,8 +48,8 @@ public static class AppDataPaths
             return Path.GetFullPath(file.Trim().Trim('"'));
         }
 
-        return Environment.GetEnvironmentVariable("ANNOTRAIN_DB") is { Length: > 0 } fromEnvironment
-            ? Path.GetFullPath(fromEnvironment.Trim().Trim('"'))
+        return AppEnvironment.Get(DatabaseVariable) is { } fromEnvironment
+            ? Path.GetFullPath(fromEnvironment)
             : ProjectDatabasePath;
     }
 

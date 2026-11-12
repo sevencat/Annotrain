@@ -67,7 +67,7 @@ public class TinyLabelDatasetTests
 
         TinyLabelDatabase database = workspace.OpenDatabaseAt(dbPath);
 
-        using var store = new DatabaseAnnotationStore(database, projectId);
+        var store = new DatabaseAnnotationStore(database.Orm, projectId);
         var image = new ImageRef("a.jpg", StorageLocation.FromPath(workspace.Root));
 
         Assert.False(await store.ExistsAsync(image));

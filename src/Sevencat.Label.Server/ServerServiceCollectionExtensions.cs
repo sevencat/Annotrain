@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Label.Server.Data;
 
@@ -12,11 +11,12 @@ public static class ServerServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // 数据目录跟着当前工作库走（库在 AddAnnotrainDatabase 里已经定死，运行期不换）
+        // 数据目录跟着当前工作库走（库在 AddAnnotrainDatabase 里已经定死，运行期不换）；
+        // 端口来自环境变量（含 .env），没有就用默认端口，地址由端口拼
         services.AddSingleton(provider => new ServerOptions
         {
-            DataDirectory = Path.GetDirectoryName(provider.GetRequiredService<TinyLabelDatabase>().Path)
-                            ?? AppDataPaths.DataDirectory,
+            Port = ResolvePort(),
+            DataDirectory = provider.GetRequiredService<IDatabaseLocation>().DatabaseDirectory,
         });
 
         // 账号与桌面端共用库/连接池（IFreeSql 单例），用户管理窗口直接从容器取它
@@ -24,5 +24,25 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<LabelWebServerHost>();
 
         return services;
+    }
+
+    /// <summary>
+    /// 监听端口：环境变量优先，没设就用默认端口；写错了直接报出来——
+    /// 悄悄退回 5180 会让人以为配置生效了。地址不单独配，恒为 <c>http://127.0.0.1:{端口}</c>。
+    /// </summary>
+    private static int ResolvePort()
+    {
+        if (AppEnvironment.Get(ServerOptions.PortVariable) is not { } configured)
+        {
+            return LabelWebModule.DefaultPort;
+        }
+
+        if (int.TryParse(configured, out int port) && port is > 0 and <= 65535)
+        {
+            return port;
+        }
+
+        throw new InvalidOperationException(
+            $"环境变量 {ServerOptions.PortVariable} 必须是 1–65535 之间的端口号：{configured}");
     }
 }

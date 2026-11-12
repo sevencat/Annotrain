@@ -53,25 +53,25 @@ public sealed class SyntheticImageGenerator(SyntheticOptions options)
     private static readonly Rgb24Color TriangleColor = Rgb24Color.FromHex("22C55E");
     private static readonly Rgb24Color CircleColor = Rgb24Color.FromHex("EF4444");
 
-    public IReadOnlyList<SyntheticImage> Generate()
+    public IReadOnlyList<SyntheticImage> Generate() => [.. Enumerate()];
+
+    /// <summary>逐张产出：数量多时不必先把 PNG 全留在内存里。</summary>
+    public IEnumerable<SyntheticImage> Enumerate()
     {
         var random = new Random(options.Seed ?? Environment.TickCount);
-        var images = new List<SyntheticImage>(options.ImageCount);
 
         for (int index = 0; index < options.ImageCount; index++)
         {
             var canvas = new Rgb24Canvas(options.Width, options.Height, Background);
             IReadOnlyList<SyntheticShape> shapes = DrawShapes(canvas, random);
 
-            images.Add(new SyntheticImage(
+            yield return new SyntheticImage(
                 $"img_{index:D4}.png",
                 options.Width,
                 options.Height,
                 canvas.EncodePng(),
-                shapes));
+                shapes);
         }
-
-        return images;
     }
 
     private IReadOnlyList<SyntheticShape> DrawShapes(Rgb24Canvas canvas, Random random)

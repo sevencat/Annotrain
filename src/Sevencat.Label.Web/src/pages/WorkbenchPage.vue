@@ -11,18 +11,19 @@
       </div>
       <q-badge color="primary" outline>待标注 {{ project.pending }}</q-badge>
 
-      <q-separator vertical dark class="q-mx-xs" />
+      <q-separator vertical class="q-mx-xs" />
 
       <q-btn-toggle
         v-model="tool"
         dense
         unelevated
         toggle-color="primary"
-        color="grey-9"
+        color="grey-3"
+        text-color="grey-9"
         :options="toolOptions"
       />
 
-      <q-separator vertical dark class="q-mx-xs" />
+      <q-separator vertical class="q-mx-xs" />
 
       <q-btn flat dense icon="undo" :disable="!task.canUndo" @click="task.undo()">
         <q-tooltip>撤销 Ctrl+Z</q-tooltip>
@@ -37,7 +38,7 @@
         <q-tooltip>删除 Del</q-tooltip>
       </q-btn>
 
-      <q-separator vertical dark class="q-mx-xs" />
+      <q-separator vertical class="q-mx-xs" />
 
       <q-btn flat dense icon="save" :loading="task.busy" @click="save">
         <q-tooltip>保存 Ctrl+S</q-tooltip>
@@ -165,7 +166,7 @@
       <q-separator vertical class="q-mx-sm" />
       <span>r{{ task.revision }}</span>
       <q-space />
-      <span :class="task.dirty ? 'text-warning' : 'text-grey-5'">{{ task.dirty ? '未保存' : '已保存' }}</span>
+      <span :class="task.dirty ? 'text-warning' : 'text-grey-7'">{{ task.dirty ? '未保存' : '已保存' }}</span>
       <q-separator vertical class="q-mx-sm" />
       <span class="ellipsis" style="max-width: 38%">{{ task.status }}</span>
     </div>
@@ -429,54 +430,52 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 浅色工作台：配色跟项目列表、桌面端（PanelBackground #fff / PanelBorder #e3e3ea / Canvas #f2f3f7）一致 */
 .wb {
   position: fixed;
   inset: 0;
-  background: #121215;
-  color: #eee;
+  background: #f5f5f7;
+  color: #1f2329;
 }
 
 .wb-bar {
-  background: #1f1f24;
+  background: #ffffff;
   min-height: 48px;
-  border-bottom: 1px solid #2c2c33;
+  border-bottom: 1px solid #e3e3ea;
 }
 
 .remark-bar {
-  background: #4a3a12;
-  color: #ffe082;
+  background: #fff7e0;
+  color: #8a6100;
   min-height: 30px;
   font-size: 13px;
   gap: 4px;
+  border-bottom: 1px solid #f0e0b8;
 }
 
 .side-panel {
   width: 280px;
-  background: #1b1b1f;
-  border-left: 1px solid #2c2c33;
+  background: #ffffff;
+  border-left: 1px solid #e3e3ea;
   min-height: 0;
 }
 
 .panel-title {
   padding: 8px 12px;
   font-size: 12px;
-  color: #9aa0a6;
-  background: #232329;
+  color: #5f6368;
+  background: #f5f5f7;
+  border-bottom: 1px solid #ececf2;
 }
 
 .panel-body {
   flex: 0 1 auto;
   overflow: auto;
   max-height: 34vh;
-  color: #ddd;
-}
-
-.panel-body :deep(.q-item) {
-  color: #ddd;
 }
 
 .panel-body :deep(.q-item__label--caption) {
-  color: #8f939a;
+  color: #8a8f98;
 }
 
 .dot {
@@ -488,10 +487,10 @@ onBeforeUnmount(() => {
 
 .wb-status {
   min-height: 26px;
-  background: #1f1f24;
-  border-top: 1px solid #2c2c33;
+  background: #ffffff;
+  border-top: 1px solid #e3e3ea;
   font-size: 12px;
-  color: #b7bcc2;
+  color: #5f6368;
   gap: 6px;
 }
 </style>

@@ -78,6 +78,26 @@ Sevencat.Label.App.exe --import <源目录> --output <目标目录> [--name 项�
 命令行可用 `--data <目录>` 换一个数据根目录（标注端与训练端都支持）。
 首次启动会把旧的 `%APPDATA%\Sevencat.Annotrain\settings.json` 迁移进 `settings.db`。
 
+### 进程级设置：环境变量 / `.env`
+
+库位置、数据目录、Web 端口这类「改完要重启」的设置不进界面，也不写回库，
+需要时在 **exe 同级** 建一个 `.env`，一行一个 `KEY=VALUE`（`#` 开头是注释，可写 `export KEY=VALUE`）：
+
+```ini
+ANNOTRAIN_DATA=D:\annotrain
+ANNOTRAIN_DB=D:\annotrain\custom.db
+ANNOTRAIN_LABEL_PORT=5280
+```
+
+| 键 | 作用 | 优先级 |
+| --- | --- | --- |
+| `ANNOTRAIN_DATA` | 数据根目录 | `--data` > 它 > 默认 `data` |
+| `ANNOTRAIN_DB` | 库文件（可在数据目录之外） | `--db` > 它 > `<数据目录>/annotrain.db` |
+| `ANNOTRAIN_LABEL_PORT` | 标注 Web 端端口（地址恒为 `http://127.0.0.1:该端口`） | 它 > 默认 `5180` |
+
+命令行永远压过环境变量；进程里已经存在的环境变量不会被 `.env` 覆盖（CI / 系统变量优先）。
+`.env` 只看 exe 同级、不翻父目录；地址写错会直接启动失败，原因记在 `data/logs/label.log`。
+
 **「新建项目」不建数据库**：它只往当前数据目录**已有**的 `annotrain.db` 里插一行；
 数据目录还没有库时，点新建会先问「要不要在这里建一个空库」，确认后才建库（只建表、不建项目）。
 新建数据库的另一条正常路径是「导入数据集…」。
@@ -204,6 +224,7 @@ dotnet test Sevencat.Train.sln
 ### 标注 Web 端
 
 标注程序启动时会在进程内拉起标注 Web 服务，只绑本机：<http://127.0.0.1:5180>（顶栏也有「打开」按钮）。
+换端口在 exe 同级 `.env` 里写 `ANNOTRAIN_LABEL_PORT=5280`（地址由端口拼，主机固定回环），顶栏显示的地址与真正监听的是同一个值。
 
 - 账号存在 `data\settings.db` 的 `web_users` 表；首次启动自动建 `admin`，初始密码写在 `data\web-admin.txt`
   （桌面端「用户管理」里能看到账号列表）。

@@ -32,8 +32,8 @@
     <PackageReference Include="Sevencat.ImageFacade.SkiaSharp" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <!-- 纯源生成器，不参与运行时：注册代码在编译期生成，别传给下游项目 -->
+    <PackageReference Include="Injectio" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

@@ -247,7 +247,7 @@ public sealed class TinyLabelDatasetStoreProvider(
         try
         {
             ProjectEntity project = SelectProject(db, projectId);
-            ClassCatalog classes = db.LoadClasses(project.Id);
+            ClassCatalog classes = TinyLabelQueries.LoadClasses(db.Orm, project.Id);
 
             IDatasetStore store = new TinyLabelDatasetStore(
                 db,

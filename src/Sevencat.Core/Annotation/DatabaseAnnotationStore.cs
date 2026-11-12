@@ -1,4 +1,5 @@
 using System.Text;
+using FreeSql;
 using Sevencat.Core.Annotation.Formats;
 using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Localization;
@@ -10,34 +11,35 @@ namespace Sevencat.Core.Annotation;
 /// 数据库式标注存储：`annotations.DocJson` 存 labelme JSON 原文，一图一行。
 /// 乐观锁用 `images.Revision`（与 `annotations.Revision` 同步递增），保存是「查版本 → 写 JSON」的小事务。
 /// </summary>
-public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
+public sealed class DatabaseAnnotationStore : IAnnotationStore
 {
-    private readonly TinyLabelDatabase _db;
+    private readonly IFreeSql _orm;
     private readonly long _projectId;
     private readonly ClassCatalog _classes;
     private readonly LabelmeCodec _codec = new();
 
-    /// <summary>用容器里的当前工作库（<see cref="TinyLabelDatabase"/> 单例），不再拼路径。</summary>
-    public DatabaseAnnotationStore(TinyLabelDatabase database, long projectId)
+    /// <summary>
+    /// 用容器里的当前工作库连接（<c>AddAnnotrainDatabase</c> 注册的那个单例）。
+    /// 只借用不持有：库的打开与释放归注册方，这里不再 <c>Dispose</c>。
+    /// </summary>
+    public DatabaseAnnotationStore(IFreeSql orm, long projectId)
     {
-        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(orm);
 
-        _db = database;
+        _orm = orm;
         _projectId = projectId;
-        _classes = _db.LoadClasses(projectId);
+        _classes = TinyLabelQueries.LoadClasses(_orm, projectId);
     }
-
-    public string DatabasePath => _db.Path;
 
     public async Task<bool> ExistsAsync(ImageRef image, CancellationToken ct = default)
     {
-        ImageEntity? entity = _db.FindImage(_projectId, image);
+        ImageEntity? entity = TinyLabelQueries.FindImage(_orm, _projectId, image);
         if (entity is null)
         {
             return false;
         }
 
-        AnnotationEntity? row = _db.Orm.Select<AnnotationEntity>()
+        AnnotationEntity? row = _orm.Select<AnnotationEntity>()
             .Where(annotation => annotation.ImageId == entity.Id)
             .First();
 
@@ -46,13 +48,13 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
 
     public async Task<AnnotationEnvelope?> LoadAsync(ImageRef image, CancellationToken ct = default)
     {
-        ImageEntity? entity = _db.FindImage(_projectId, image);
+        ImageEntity? entity = TinyLabelQueries.FindImage(_orm, _projectId, image);
         if (entity is null)
         {
             return null;
         }
 
-        AnnotationEntity? row = _db.Orm.Select<AnnotationEntity>()
+        AnnotationEntity? row = _orm.Select<AnnotationEntity>()
             .Where(annotation => annotation.ImageId == entity.Id)
             .First();
 
@@ -79,7 +81,7 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        ImageEntity entity = _db.FindImage(_projectId, image)
+        ImageEntity entity = TinyLabelQueries.FindImage(_orm, _projectId, image)
             ?? throw new InvalidOperationException(Text.Format("Error.ImageNotInDatabase", image.RelativePath));
 
         int currentRevision = entity.Revision;
@@ -107,9 +109,9 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
         _codec.Write(buffer, toWrite, new AnnotationWriteContext(entity.RelPath, entity.Width, entity.Height, _classes));
         string json = Encoding.UTF8.GetString(buffer.ToArray());
 
-        _db.Orm.Ado.Transaction(() =>
+        _orm.Ado.Transaction(() =>
         {
-            _db.Orm.Update<ImageEntity>()
+            _orm.Update<ImageEntity>()
                 .Set(row => row.Revision, nextRevision)
                 .Set(row => row.UpdatedAt, now)
                 .Where(row => row.Id == entity.Id)
@@ -117,12 +119,12 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
 
             // 保存标注即视为"已标注"：列表里的状态列要跟着变，不能一直停在 pending。
             // 已通过 / 已排除 / 已跳过 是人工状态，保存标注不回退它们。
-            _db.Orm.Update<ImageEntity>()
+            _orm.Update<ImageEntity>()
                 .Set(row => row.State, "labeled")
                 .Where(row => row.Id == entity.Id && row.State == "pending")
                 .ExecuteAffrows();
 
-            int updated = _db.Orm.Update<AnnotationEntity>()
+            int updated = _orm.Update<AnnotationEntity>()
                 .Set(row => row.DocJson, json)
                 .Set(row => row.Revision, nextRevision)
                 .Set(row => row.UpdatedAt, now)
@@ -131,7 +133,7 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
 
             if (updated == 0)
             {
-                _db.Orm.Insert(new AnnotationEntity
+                _orm.Insert(new AnnotationEntity
                 {
                     ImageId = entity.Id,
                     ProjectId = _projectId,
@@ -164,6 +166,4 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         return _codec.Read(stream, new AnnotationReadContext(info, _classes));
     }
-
-    public void Dispose() => _db.Dispose();
 }

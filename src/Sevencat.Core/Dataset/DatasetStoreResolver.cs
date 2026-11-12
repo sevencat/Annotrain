@@ -90,4 +90,38 @@ public sealed class DatasetStoreResolver(
 
         return new DatasetOpenResult(effective, store);
     }
+
+    /// <summary>
+    /// 已知形态与入口文件时直接打开，跳过"探测器挑第一个候选"这一步
+    /// （例如用户明确选了某个 <c>annotrain.db</c>，同目录里还有别的库）。
+    /// <paramref name="descriptorPath"/> 是相对 <paramref name="root"/> 的路径。
+    /// </summary>
+    public async Task<DatasetOpenResult> OpenAsync(
+        StorageLocation root,
+        DatasetFormat format,
+        string descriptorPath,
+        string? datasetId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptorPath);
+
+        IDatasetStoreProvider provider = FindProvider(format)
+            ?? throw new DatasetFormatNotSupportedException(format);
+
+        var effective = new DatasetProbe(format, root, descriptorPath, [], format.ToDisplayName())
+        {
+            Candidates = [new DatasetCandidate(format, descriptorPath, format.ToDisplayName())],
+        };
+
+        IDatasetStore store = await provider.OpenAsync(effective, datasetId, ct).ConfigureAwait(false);
+
+        logger?.LogInformation(
+            "数据集已打开：{Format}，根目录 {Root}，入口 {Descriptor}",
+            store.Format,
+            store.Root,
+            descriptorPath);
+
+        return new DatasetOpenResult(effective, store);
+    }
 }

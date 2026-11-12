@@ -34,6 +34,31 @@ public sealed record TrainingRunOptions(
 
     /// <summary>日志回调：设备、模型、每轮摘要。</summary>
     public Action<string>? Log { get; init; }
+
+    /// <summary>
+    /// 暂停 / 继续控制器：界面侧创建后传进来，运行器在批次边界检查它；
+    /// 为空时运行器自己建一个不可暂停的控制器。
+    /// </summary>
+    public ITrainingControl? Control { get; init; }
+}
+
+/// <summary>
+/// 训练的暂停 / 继续控制。训练引擎实现它（<c>TrainControl</c>），
+/// 界面只持有这个抽象，不依赖具体实现。
+/// </summary>
+public interface ITrainingControl
+{
+    /// <summary>是否处于暂停状态。</summary>
+    bool IsPaused { get; }
+
+    /// <summary>请求暂停：训练线程在下一个批次边界停住。</summary>
+    void Pause();
+
+    /// <summary>继续训练。</summary>
+    void Resume();
+
+    /// <summary>训练循环每个批次前调用；返回 false 表示已取消。暂停期间阻塞。</summary>
+    bool WaitUntilReady();
 }
 
 /// <summary>

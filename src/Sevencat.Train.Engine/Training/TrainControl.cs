@@ -1,3 +1,5 @@
+using Sevencat.Core.Simulation;
+
 namespace Sevencat.Train.Engine.Training;
 
 /// <summary>
@@ -10,7 +12,7 @@ namespace Sevencat.Train.Engine.Training;
 /// 只在批次边界检查，绝不打断已经开始的 forward/backward —— 否则会留下不一致的半程梯度。
 /// </para>
 /// </summary>
-public sealed class TrainControl : IDisposable
+public sealed class TrainControl : IDisposable, ITrainingControl
 {
     private readonly ManualResetEventSlim _resume = new(initialState: true);
     private bool _disposed;

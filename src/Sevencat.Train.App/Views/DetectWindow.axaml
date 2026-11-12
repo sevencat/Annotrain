@@ -15,7 +15,8 @@
     </Border>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,260">
-      <Border Grid.Column="0" Margin="12" CornerRadius="6" Background="#1E1E1E" ClipToBounds="True">
+      <Border Grid.Column="0" Margin="12" CornerRadius="6" Background="#F2F3F7"
+              BorderThickness="1" BorderBrush="#E3E3EA" ClipToBounds="True">
         <Viewbox Stretch="Uniform" Margin="8">
           <Canvas x:Name="Board" Width="1" Height="1">
             <Image x:Name="Preview" Stretch="Fill" />
@@ -37,7 +38,7 @@
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:DetectedBox">
                   <Rectangle Width="{Binding Width}" Height="{Binding Height}"
-                             Stroke="#22D3EE" StrokeThickness="2" />
+                             Stroke="#2563EB" StrokeThickness="2" />
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

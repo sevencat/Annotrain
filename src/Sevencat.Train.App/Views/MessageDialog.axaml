@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Train.App.Localization"
+        x:Class="Sevencat.Train.App.Views.MessageDialog"
+        Width="480" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="20" Spacing="12">
+    <TextBlock x:Name="Headline" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+
+    <ScrollViewer MaxHeight="280" HorizontalScrollBarVisibility="Disabled">
+      <SelectableTextBlock x:Name="Body" FontSize="13" TextWrapping="Wrap" LineHeight="21" />
+    </ScrollViewer>
+
+    <Button Content="{l:Loc Sim.Ok}" HorizontalAlignment="Right" MinWidth="88"
+            IsDefault="True" Click="OnOk" />
+  </StackPanel>
+
+</Window>

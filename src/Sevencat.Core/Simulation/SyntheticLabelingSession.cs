@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -18,7 +19,14 @@ public sealed record SyntheticImportOptions(
     string ProjectName = "模拟项目",
     double ValRatio = 0.25,
     int JitterPixels = 2,
-    int? Seed = 20261112);
+    int? Seed = 20261112)
+{
+    /// <summary>
+    /// 库文件路径；为空时用 <c>{DatasetRoot}/annotrain.db</c>。
+    /// 库与数据目录可以分开放（训练端用 <c>--db</c> 指过去即可）。
+    /// </summary>
+    public string? DatabasePath { get; init; }
+}
 
 /// <summary>导入结果。</summary>
 public sealed record SyntheticImportResult(
@@ -30,8 +38,9 @@ public sealed record SyntheticImportResult(
     IReadOnlyList<string> Splits);
 
 /// <summary>
-/// 把模拟图"导入成项目并标注完"：写图片 + 建 TinyLabel 库 + 建项目/类别/图片 + 写 labelme JSON 标注。
+/// 把模拟图"导入成项目并标注完"：写图片 + 打进<b>已有</b>的 TinyLabel 库（建项目/类别/图片 + 写 labelme JSON 标注）。
 /// 相当于人把每张图里的正方形/三角形/圆形都框了一遍（可带 ±N 像素抖动）。
+/// 库文件不存在时直接失败，不会新建——建库是标注端启动时的事。
 /// </summary>
 public static class SyntheticLabelingSession
 {
@@ -47,13 +56,23 @@ public static class SyntheticLabelingSession
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(options);
 
+        string databasePath = string.IsNullOrWhiteSpace(options.DatabasePath)
+            ? Path.Combine(options.DatasetRoot, "annotrain.db")
+            : Path.GetFullPath(options.DatabasePath);
+
+        // 只往已有库里写：库不存在直接失败，绝不顺手新建（建库是标注端启动时的事）
+        if (!File.Exists(databasePath))
+        {
+            throw new FileNotFoundException(
+                Text.Format("Error.DatabaseFileMissing", databasePath), databasePath);
+        }
+
         Directory.CreateDirectory(options.DatasetRoot);
 
         // 图片必须落在数据集根下，DB 里的 FilePath 才与 blob 路径一致（否则导出时读不到图）
         var location = StorageLocation.FromPath(options.DatasetRoot);
         IBlobStore store = registry.Get(location);
 
-        string databasePath = Path.Combine(options.DatasetRoot, "annotrain.db");
         var random = new Random(options.Seed ?? Environment.TickCount);
         var splits = new List<string>();
 
@@ -61,7 +80,9 @@ public static class SyntheticLabelingSession
         bool reuseCurrent = current is not null
             && string.Equals(databasePath, current.Path, StringComparison.OrdinalIgnoreCase);
 
-        using TinyLabelDatabase? owned = reuseCurrent ? null : TinyLabelDatabase.Open(databasePath);
+        using TinyLabelDatabase? owned = reuseCurrent
+            ? null
+            : TinyLabelDatabase.Open(databasePath, createIfMissing: false);
         TinyLabelDatabase database = reuseCurrent ? current! : owned!;
 
         long projectId = (long)database.Orm.Insert(new ProjectEntity
@@ -101,7 +122,7 @@ public static class SyntheticLabelingSession
                     .ConfigureAwait(false);
             }
 
-            string split = ResolveSplit(index, images.Count, options.ValRatio);
+            string split = SyntheticDatasetWriter.ResolveSplit(index, images.Count, options.ValRatio);
             if (!splits.Contains(split, StringComparer.OrdinalIgnoreCase))
             {
                 splits.Add(split);
@@ -154,26 +175,6 @@ public static class SyntheticLabelingSession
             string.Join(",", splits));
 
         return new SyntheticImportResult(databasePath, projectId, images.Count, annotated, shapeCount, splits);
-    }
-
-    /// <summary>按比例交错分配 train/val，并保证两边都有图（除非只有一张）。</summary>
-    private static string ResolveSplit(int index, int total, double valRatio)
-    {
-        if (total <= 1 || valRatio is <= 0 or >= 1)
-        {
-            return "train";
-        }
-
-        int step = Math.Max(2, (int)Math.Round(1 / valRatio));
-        bool isVal = (index + 1) % step == 0;
-
-        // 最后一张兜底：全是 train 时把最后一张挪到 val
-        if (!isVal && index == total - 1 && (index + 1) < step)
-        {
-            isVal = true;
-        }
-
-        return isVal ? "val" : "train";
     }
 
     private static string BuildLabelmeJson(SyntheticImage image, int jitterPixels, Random random)

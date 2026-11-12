@@ -16,6 +16,9 @@ internal static class Program
             return 1;
         }
 
+        // exe 同级的 .env 先填进环境变量：--data / --db 之外的设置（端口等）都从这里来
+        AppEnvironment.LoadDotEnv();
+
         // --data <目录>：数据根目录（项目库 / 配置库 / 日志），默认 exe 同级 data
         AppDataPaths.Initialize(AppDataPaths.ReadDataArgument(args));
         AppDataPaths.EnsureCreated();
@@ -29,7 +32,7 @@ internal static class Program
             // 导入写的就是 --output 目录里的 annotrain.db：库跟着它走（--db 显式指定时以 --db 为准）
             AppDataPaths.Initialize(command.DestinationPath);
 
-            return ImportCommandRunner.RunAsync(command, AppDataPaths.ResolveDatabasePath(args))
+            return ImportCommandRunner.RunAsync(command, StartupOptions.Parse(args))
                 .GetAwaiter().GetResult();
         }
 

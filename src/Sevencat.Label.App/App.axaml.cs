@@ -25,26 +25,44 @@ public partial class App : Application
         // 数据目录（库、日志都落这里）先定，再打开库：文件不在就当场建空库
         AppDataPaths.Initialize(startup.DataDirectory);
 
-        string databasePath = AppDataPaths.ResolveDatabasePath(args);
-
         ServiceProvider services = new ServiceCollection()
-            .AddAnnotrainDatabase(databasePath)
+            // 参数已经解析过，直接用这一份注册：窗口与启动逻辑看到的是同一个对象，
+            // 它同时就是「库在哪」（IDatabaseLocation），开库时直接拿它
+            .AddSingleton(startup)
+            .AddAnnotrainDatabase(startup)
             .AddAnnotrainCore("label")
             .AddAnnotrainLabel()
             .AddAnnotrainWebServer()
-            .AddSingleton(startup)
-            .AddSingleton<MainWindowViewModel>()
-            .AddSingleton<MainWindow>()
+            // Injectio 按程序集生成：MainWindowViewModel / MainWindow 在特性里注册
+            .AddSevencatLabelApp()
             .BuildServiceProvider();
+
+        // 逃生舱口：少数拿不到构造函数注入的地方（XAML 预览、转换器回调）可以从这里偶尔取一次
+        BeanFactory.Initialize(services);
 
         // 语言：设置里存 zh/en，空值跟随系统
         ApplyLanguage(services.GetRequiredService<AppSettings>());
 
         ILogger<App> logger = services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
+
+        ServerOptions serverOptions;
+
+        try
+        {
+            serverOptions = services.GetRequiredService<ServerOptions>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            // .env / 环境变量写错了：日志里留下原因，再往上抛让进程直接退出，别带着错配置跑
+            logger.LogError(ex, "启动配置不合法，请检查 exe 同级的 .env 或环境变量");
+            throw;
+        }
+
         logger.LogInformation(
-            "标注应用启动，数据目录：{Directory}，数据库：{Database}",
+            "标注应用启动，数据目录：{Directory}，数据库：{Database}，Web 地址：{Url}",
             AppDataPaths.DataDirectory,
-            databasePath);
+            startup.DatabasePath,
+            serverOptions.Url);
 
         // Web 端随桌面端启停，只绑本机回环；起不来（端口占用等）只记日志，不影响桌面端
         services.GetRequiredService<LabelWebServerHost>().Start();
@@ -66,6 +84,11 @@ public partial class App : Application
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "释放服务容器时报错");
+                }
+                finally
+                {
+                    // 容器已经释放，再留着引用只会让后续解析调到已释放的 provider
+                    BeanFactory.Reset();
                 }
             };
         }

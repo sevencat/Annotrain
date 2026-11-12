@@ -64,6 +64,40 @@ public sealed class TinyLabelProjectCatalog(
             return [];
         }
 
+        IReadOnlyList<TinyLabelProjectSummary> result = ReadProjects(orm, ct);
+
+        logger?.LogInformation("数据目录 {Root} 有 {Count} 个项目", root, result.Count);
+
+        return result;
+    }
+
+    /// <summary>
+    /// 直接读某个库文件（任意位置的 <c>annotrain.db</c>，比如标注端 data 目录下那份）：
+    /// 用独立的只读连接，不受启动时那个工作库影响，也不改库结构。
+    /// </summary>
+    public static IReadOnlyList<TinyLabelProjectSummary> ReadFile(
+        string databaseFile,
+        ILogger? logger = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databaseFile);
+
+        if (!File.Exists(databaseFile))
+        {
+            return [];
+        }
+
+        using TinyLabelDatabase database = TinyLabelDatabase.OpenReadOnly(databaseFile);
+
+        IReadOnlyList<TinyLabelProjectSummary> projects = ReadProjects(database.Orm, ct);
+
+        logger?.LogInformation("库 {Path} 有 {Count} 个标注项目", databaseFile, projects.Count);
+
+        return projects;
+    }
+
+    private static IReadOnlyList<TinyLabelProjectSummary> ReadProjects(IFreeSql orm, CancellationToken ct)
+    {
         List<ProjectEntity> projects = orm.Select<ProjectEntity>()
             .OrderBy(project => project.Id)
             .ToList();
@@ -114,8 +148,6 @@ public sealed class TinyLabelProjectCatalog(
 
             return closed != 0 ? closed : right.CreatedAt.CompareTo(left.CreatedAt);
         });
-
-        logger?.LogInformation("数据目录 {Root} 有 {Count} 个项目", root, result.Count);
 
         return result;
     }

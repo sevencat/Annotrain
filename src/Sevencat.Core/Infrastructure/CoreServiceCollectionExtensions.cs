@@ -11,15 +11,19 @@ namespace Sevencat.Core.Infrastructure;
 public static class CoreServiceCollectionExtensions
 {
     /// <summary>
-    /// 打开（不存在就建）当前工作库，并把 <see cref="TinyLabelDatabase"/> 注入成单例（随容器释放）。
+    /// 按给定的库位置打开（不存在就建）当前工作库，并把 <see cref="TinyLabelDatabase"/> 注入成单例（随容器释放）。
+    /// 位置本身也一并注册：调用方给谁就用谁——各宿主都 <see cref="StartupOptions.Parse"/> 一份自己的参数，
+    /// 测试想单独指一个库时同样造一份，Core 不再自己编一个实现。
     /// 要在 <see cref="AddAnnotrainCore"/> 之前调用：库路径只定这一次，配置 / 账号 / 项目共用这一个连接池。
     /// </summary>
-    public static IServiceCollection AddAnnotrainDatabase(this IServiceCollection services, string databasePath)
+    public static IServiceCollection AddAnnotrainDatabase(this IServiceCollection services, IDatabaseLocation location)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        ArgumentNullException.ThrowIfNull(location);
 
-        services.AddSingleton(TinyLabelDatabase.Open(databasePath));
+        TinyLabelDatabase database = TinyLabelDatabase.Open(location.DatabasePath);
+        services.AddSingleton(database);
+        services.AddSingleton(location);
 
         return services;
     }

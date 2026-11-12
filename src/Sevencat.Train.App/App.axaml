@@ -5,7 +5,28 @@
              RequestedThemeVariant="Default">
 
   <Application.Styles>
-    <themes:MaterialTheme BaseTheme="Light" PrimaryColor="Blue" SecondaryColor="Teal" />
+    <!-- 与标注端同一套主题：DeepPurple 主色 + Light 底 -->
+    <themes:MaterialTheme BaseTheme="Light" PrimaryColor="DeepPurple" SecondaryColor="Teal" />
+
+    <!-- 整体字号：正文默认 16，与标注端一致 -->
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
   </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="PanelBorderBrush" Color="#FFE3E3EA" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FF1C1C21" />
+          <SolidColorBrush x:Key="PanelBorderBrush" Color="#FF34343D" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 
 </Application>

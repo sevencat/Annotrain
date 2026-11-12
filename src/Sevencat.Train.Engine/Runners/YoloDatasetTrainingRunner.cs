@@ -124,7 +124,12 @@ public sealed class YoloDatasetTrainingRunner(
         Save("model.safetensors", new EpochMetrics(0, 0, float.NaN, options.LearningRate));
 
         IReadOnlyList<EpochMetrics> history;
-        using (var control = new TrainControl(ct))
+
+        // 界面传进来的控制器由界面负责释放；没传就自己建一个（含取消令牌），用完释放。
+        bool ownsControl = options.Control is not TrainControl;
+        TrainControl control = ownsControl ? new TrainControl(ct) : (TrainControl)options.Control!;
+
+        try
         {
             history = trainer.Fit(
                 BatchesForEpoch,
@@ -155,6 +160,13 @@ public sealed class YoloDatasetTrainingRunner(
                     Save("model.safetensors", metrics, map50, map95);
                 },
                 control);
+        }
+        finally
+        {
+            if (ownsControl)
+            {
+                control.Dispose();
+            }
         }
 
         ct.ThrowIfCancellationRequested();

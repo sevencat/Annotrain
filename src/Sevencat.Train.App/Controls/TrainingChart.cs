@@ -12,12 +12,14 @@ namespace Sevencat.Train.App.Controls;
 /// </summary>
 public sealed class TrainingChart : Control
 {
-    private static readonly IBrush BackgroundBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
-    private static readonly IBrush GridBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A));
-    private static readonly IBrush AxisBrush = new SolidColorBrush(Color.FromRgb(0x6B, 0x6B, 0x6B));
-    private static readonly IBrush LossBrush = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-    private static readonly IBrush MapBrush = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E));
-    private static readonly IBrush HintBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A));
+    // 固定浅色：与标注 Web 工作台、标注端画布（CanvasBackgroundBrush #F2F3F7）保持同一套观感，
+    // 系统切到深色主题时这里也不跟着翻——曲线图白底读起来更稳。
+    private static readonly IBrush BackgroundBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+    private static readonly IBrush GridBrush = new SolidColorBrush(Color.FromRgb(0xE3, 0xE3, 0xEA));
+    private static readonly IBrush AxisBrush = new SolidColorBrush(Color.FromRgb(0xB8, 0xBE, 0xC9));
+    private static readonly IBrush LossBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26));
+    private static readonly IBrush MapBrush = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A));
+    private static readonly IBrush HintBrush = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
 
     private IReadOnlyList<ChartPoint> _points = [];
 

@@ -658,7 +658,8 @@ defineExpose({
   position: relative;
   width: 100%;
   height: 100%;
-  background: #1b1b1f;
+  /* 与桌面端 CanvasBackgroundBrush（Light #F2F3F7）一致：图片周围留浅灰 */
+  background: #f2f3f7;
   overflow: hidden;
   cursor: default;
 }
@@ -674,7 +675,7 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(0, 0, 0, 0.45);
   font-size: 14px;
   pointer-events: none;
 }

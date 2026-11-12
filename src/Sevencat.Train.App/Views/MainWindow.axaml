@@ -8,83 +8,162 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Icon="/Assets/app.png"
-        Width="1280" Height="860"
-        MinWidth="960" MinHeight="640"
+        Width="1080" Height="760"
+        MinWidth="980" MinHeight="620"
         WindowStartupLocation="CenterScreen">
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Window.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.value">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
 
-    <!-- 工具栏 -->
-    <Border Grid.Row="0" Padding="12,10" BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource MaterialDesignDivider}">
-      <StackPanel Spacing="8">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-          <Button Grid.Column="0" Content="{l:Loc Train.OpenDataset}" Click="OnOpenDataset" />
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="8" RowSpacing="8">
 
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-            <TextBlock Text="{Binding DatasetSummary}" Opacity="0.85" TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding DatasetStats}" Opacity="0.55" FontSize="12" VerticalAlignment="Center" />
-          </StackPanel>
+    <!-- 顶栏：与标注端同构（标题 + 状态徽标 / 服务入口 / 语言 / 模拟数据 · 关于 · 日志） -->
+    <Border Grid.Row="0" Classes="card" Padding="12,8">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="{l:Loc Train.Title}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
 
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-            <ComboBox ItemsSource="{Binding Languages}"
-                      SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"
-                      MinWidth="104" VerticalAlignment="Center">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="loc:LanguageOption">
-                  <TextBlock Text="{Binding DisplayName}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <Button Content="{l:Loc Train.Start}" Click="OnStart" IsEnabled="{Binding !IsTraining}" />
-            <Button Content="{l:Loc Train.Stop}" Click="OnStop" IsEnabled="{Binding IsTraining}" />
+          <Border CornerRadius="9" Padding="8,1" Background="#1F16A34A" VerticalAlignment="Center"
+                  IsVisible="{Binding ShowRunningBadge}">
+            <TextBlock Text="{l:Loc Train.Running}" FontSize="13" Foreground="#16A34A" />
+          </Border>
+          <Border CornerRadius="9" Padding="8,1" Background="#1FF59E0B" VerticalAlignment="Center"
+                  IsVisible="{Binding ShowPausedBadge}">
+            <TextBlock Text="{l:Loc Train.Paused}" FontSize="13" Foreground="#B45309" />
+          </Border>
+          <Border CornerRadius="9" Padding="8,1" Background="#14000000" VerticalAlignment="Center"
+                  IsVisible="{Binding ShowReadyBadge}">
+            <TextBlock Text="{l:Loc Train.Ready}" FontSize="13" Opacity="0.7" />
+          </Border>
+        </StackPanel>
+
+        <!-- 训练服务入口：端口 + 可打开的地址 + 打开（Web 端接入后即可用） -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0"
+                    VerticalAlignment="Center">
+          <TextBlock Text="{Binding ServicePortText}" FontSize="13" Opacity="0.6" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding ServiceUrl}" FontSize="13" Opacity="0.75" VerticalAlignment="Center"
+                     FontFamily="Consolas,Menlo,monospace" TextTrimming="CharacterEllipsis" />
+          <Button Content="{l:Loc Train.OpenService}" Padding="10,2" FontSize="13" Click="OnOpenService" />
+        </StackPanel>
+
+        <ComboBox Grid.Column="2" x:Name="LanguageBox"
+                  ItemsSource="{Binding Languages}"
+                  SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"
+                  MinWidth="124" VerticalAlignment="Center"
+                  ToolTip.Tip="{l:Loc Common.Language}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="loc:LanguageOption">
+              <TextBlock Text="{Binding DisplayName}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <Button Grid.Column="3" Content="{l:Loc Train.Simulate}" Click="OnSimulate"
+                ToolTip.Tip="{l:Loc Sim.Title}" />
+        <Button Grid.Column="4" Content="{l:Loc Train.About}" Click="OnAbout" />
+        <Button Grid.Column="5" Content="{l:Loc Train.Log}" Click="OnOpenLog" />
+      </Grid>
+    </Border>
+
+    <!-- 第二行：数据集 + 训练控制 + 只读参数（同一排） / 输出目录 + 数据集统计 -->
+    <Border Grid.Row="1" Classes="card" Padding="12,10">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+
+        <!-- 第一行：打开数据集 + 训练控制 + 参数，依次排开 -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{l:Loc Train.Dataset}" Classes="caption" VerticalAlignment="Center" />
+            <Button Content="YOLO" Padding="10,2" FontSize="13" Click="OnOpenYolo"
+                    ToolTip.Tip="{l:Loc Train.OpenYoloTip}" />
+            <Button Content="RF-DETR" Padding="10,2" FontSize="13" Click="OnOpenRfDetr"
+                    ToolTip.Tip="{l:Loc Train.OpenRfDetrTip}" />
+            <Button Content="TinyLabel" Padding="10,2" FontSize="13" Click="OnOpenTinyLabel"
+                    ToolTip.Tip="{l:Loc Train.OpenTinyLabelTip}" />
+            <Button Content="{l:Loc Train.Start}" IsEnabled="{Binding CanStart}" Click="OnStart" />
+            <Button Content="{l:Loc Train.Pause}" IsEnabled="{Binding CanPause}" Click="OnPause" />
+            <Button Content="{l:Loc Train.Resume}" IsEnabled="{Binding CanResume}" Click="OnResume" />
+            <Button Content="{l:Loc Train.Finish}" IsEnabled="{Binding CanFinish}" Click="OnStop" />
             <Button Content="{l:Loc Train.Detect}" Click="OnDetect"
                     ToolTip.Tip="{l:Loc Train.DetectTip}" />
           </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBlock Text="epochs" Classes="caption" />
+            <TextBlock Text="{Binding EpochsText}" Classes="value" MinWidth="26" />
+            <TextBlock Text="batch" Classes="caption" Margin="10,0,0,0" />
+            <TextBlock Text="{Binding BatchSizeText}" Classes="value" MinWidth="20" />
+            <TextBlock Text="imgsz" Classes="caption" Margin="10,0,0,0" />
+            <TextBlock Text="{Binding ImageSizeText}" Classes="value" MinWidth="30" />
+            <Button Content="{l:Loc Train.Params}" Padding="10,2" FontSize="13" Margin="4,0,0,0"
+                    Click="OnEditParams" ToolTip.Tip="{l:Loc Train.ParamsTip}" />
+          </StackPanel>
         </Grid>
 
-        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
-          <TextBlock Grid.Column="0" Text="epochs" VerticalAlignment="Center" Opacity="0.6" />
-          <NumericUpDown Grid.Column="1" Value="{Binding Epochs}" Minimum="1" Maximum="1000"
-                         Increment="1" Width="96" FormatString="0" />
+        <!-- 第二行：输出目录（只显示，修改按钮紧跟路径）+ 数据集统计 -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="10">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Text="{l:Loc Train.OutputDir}" Classes="caption"
+                       ToolTip.Tip="{l:Loc Train.OutputDirTip}" />
+            <TextBlock Text="{Binding OutputDirectory}" Classes="value" Opacity="0.8" MaxWidth="230"
+                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OutputDirectory}" />
+            <Button Content="{l:Loc Train.Set}" Padding="10,2" FontSize="13" Margin="2,0,0,0"
+                    Click="OnPickOutput" ToolTip.Tip="{l:Loc Train.OutputDirTip}" />
+            <Button Content="{l:Loc Train.Open}" Padding="10,2" FontSize="13" Margin="2,0,0,0"
+                    Click="OnOpenOutput" ToolTip.Tip="{l:Loc Train.OpenOutputTip}" />
+            <TextBlock Text="{l:Loc Train.Product}" Classes="caption" Margin="10,0,0,0"
+                       ToolTip.Tip="{l:Loc Train.ProductTip}" />
+            <TextBlock Text="best.safetensors" Classes="value" Opacity="0.8"
+                       ToolTip.Tip="{l:Loc Train.ProductTip}" />
+          </StackPanel>
 
-          <TextBlock Grid.Column="2" Text="batch" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
-          <NumericUpDown Grid.Column="3" Value="{Binding BatchSize}" Minimum="1" Maximum="64"
-                         Increment="1" Width="88" FormatString="0" />
-
-          <TextBlock Grid.Column="4" Text="imgsz" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
-          <NumericUpDown Grid.Column="5" Value="{Binding ImageSize}" Minimum="64" Maximum="1536"
-                         Increment="32" Width="96" FormatString="0" />
-
-          <TextBlock Grid.Column="6" Text="{l:Loc Train.OutputDir}" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
-          <TextBox Grid.Column="7" Text="{Binding OutputDirectory}" />
-          <Button Grid.Column="8" Content="…" Click="OnPickOutput" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="4,0"
+                      HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBlock Text="{Binding DatasetPath}" FontSize="12" Opacity="0.5" MaxWidth="190"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding DatasetPath}" />
+            <TextBlock Text="{Binding DatasetSummary}" FontSize="13" Opacity="0.75"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding DatasetStats}" FontSize="13" Opacity="0.55"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
         </Grid>
-      </StackPanel>
+      </Grid>
     </Border>
 
-    <!-- 中间：训练曲线 -->
-    <Border Grid.Row="1" Margin="12,10" CornerRadius="6" ClipToBounds="True">
+    <!-- 中间：训练曲线（白底自绘，靠卡片边框跟窗口底色分开） -->
+    <Border Grid.Row="2" Classes="card" Padding="0" ClipToBounds="True">
       <controls:TrainingChart x:Name="Chart" />
     </Border>
 
-    <!-- 下面：状态与日志 -->
-    <Border Grid.Row="2" Height="220" BorderThickness="0,1,0,0"
-            BorderBrush="{DynamicResource MaterialDesignDivider}">
-      <Grid RowDefinitions="Auto,Auto,*" Margin="12,8" RowSpacing="6">
+    <!-- 下排：进度 + 状态 -->
+    <Border Grid.Row="3" Classes="card" Padding="12,10">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
         <ProgressBar Grid.Row="0" Minimum="0" Maximum="1" Value="{Binding Progress}" Height="6" />
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Grid.Column="0" Text="{Binding Status}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Grid.Column="1" Text="{Binding RunInfo}" Margin="16,0" Opacity="0.6"
-                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          <TextBlock Grid.Column="2" Text="{Binding DatasetStats}" Opacity="0.6" VerticalAlignment="Center" />
-        </Grid>
-
-        <TextBox Grid.Row="2" Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True"
-                 FontFamily="Consolas,Menlo,monospace" FontSize="12"
-                 TextWrapping="NoWrap" VerticalContentAlignment="Top"
-                 Background="Transparent" BorderThickness="0" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Status}" FontWeight="SemiBold" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding RunInfo}" FontSize="13" Opacity="0.6" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
       </Grid>
     </Border>
   </Grid>

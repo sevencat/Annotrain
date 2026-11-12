@@ -24,8 +24,8 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
+    <!-- 源生成器：用 [RegisterSingleton] 等特性生成 services 扩展方法，辅助 DI 注册 -->
+    <PackageVersion Include="Injectio" Version="6.3.0" />
   </ItemGroup>
 
   <ItemGroup Label="Logging">

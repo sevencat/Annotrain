@@ -1,5 +1,4 @@
 using FreeSql;
-using Sevencat.Core.Annotation;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
@@ -9,6 +8,10 @@ namespace Sevencat.Core.Dataset.TinyLabel;
 /// 「图片目录 + SQLite」形态的数据库入口：FreeSql + SQLite（WAL）。
 /// 表结构、索引都写在实体上，打开旧库时由 <c>SyncStructure</c> 自动补齐缺的表/列/索引。
 /// DB 必须落在本地可写路径（WAL 需要随机写），图片可以另外指向远端。
+/// <para>
+/// 职责只有三件：开库（含 WAL 与结构同步）、拿着 <see cref="Path"/> 与 <see cref="Orm"/>、负责 <see cref="Dispose"/>。
+/// 查询请在 <see cref="IFreeSql"/> 上直接写，或复用 <see cref="TinyLabelQueries"/>，不要往这个类上加业务方法。
+/// </para>
 /// <para>
 /// 打开一次就是一个实例，进程里只该有一个：启动时由容器（<c>AddAnnotrainDatabase</c>）建好注册成单例，
 /// 需要库的类注入 <see cref="IFreeSql"/>（或这个实例本身），别再每次拼路径开一遍——
@@ -43,6 +46,29 @@ public sealed class TinyLabelDatabase : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         return Create(System.IO.Path.GetFullPath(path), createIfMissing);
+    }
+
+    /// <summary>
+    /// 只读打开别人的库（例如训练端选了标注端那份 <c>annotrain.db</c>）：
+    /// 不建库、不 <c>SyncStructure</c>，只拿连接查数据。调用方负责 <see cref="Dispose"/>。
+    /// </summary>
+    public static TinyLabelDatabase OpenReadOnly(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string full = System.IO.Path.GetFullPath(path);
+
+        if (!File.Exists(full))
+        {
+            throw new FileNotFoundException(Text.Format("Error.DatabaseFileMissing", full), full);
+        }
+
+        var orm = new FreeSqlBuilder()
+            .UseConnectionString(DataType.Sqlite, $"Data Source={full};Default Timeout=5;Pooling=True;")
+            .UseAutoSyncStructure(false)
+            .Build();
+
+        return new TinyLabelDatabase(orm, full, owned: true);
     }
 
     private static TinyLabelDatabase Create(string full, bool createIfMissing)
@@ -87,64 +113,6 @@ public sealed class TinyLabelDatabase : IDisposable
         Orm.CodeFirst.SyncStructure<ProjectClassEntity>();
         Orm.CodeFirst.SyncStructure<ImageEntity>();
         Orm.CodeFirst.SyncStructure<AnnotationEntity>();
-    }
-
-    /// <summary>按 <c>OrderIndex</c> 取类别表；中间空洞补空串，保证 classId 与下标一致。</summary>
-    internal ClassCatalog LoadClasses(long projectId)
-    {
-        List<ProjectClassEntity> rows = Orm.Select<ProjectClassEntity>()
-            .Where(row => row.ProjectId == projectId)
-            .OrderBy(row => row.OrderIndex)
-            .ToList();
-
-        if (rows.Count == 0)
-        {
-            return ClassCatalog.Empty;
-        }
-
-        int count = rows.Max(row => row.OrderIndex) + 1;
-        var names = new string[count];
-
-        foreach (ProjectClassEntity row in rows)
-        {
-            if (row.OrderIndex >= 0 && row.OrderIndex < count)
-            {
-                names[row.OrderIndex] = row.Name;
-            }
-        }
-
-        return ClassCatalog.FromNames(names);
-    }
-
-    /// <summary>按相对路径 → 绝对路径 → 文件名 依次匹配图片行（三种来源都可能当 RelativePath 传进来）。</summary>
-    internal ImageEntity? FindImage(long projectId, ImageRef image)
-    {
-        string relative = image.RelativePath.Replace('\\', '/');
-
-        ImageEntity? found = Orm.Select<ImageEntity>()
-            .Where(row => row.ProjectId == projectId && row.RelPath == relative)
-            .First();
-
-        if (found is not null)
-        {
-            return found;
-        }
-
-        found = Orm.Select<ImageEntity>()
-            .Where(row => row.ProjectId == projectId && row.FilePath == relative)
-            .First();
-
-        if (found is not null)
-        {
-            return found;
-        }
-
-        string fileName = System.IO.Path.GetFileName(relative);
-
-        return Orm.Select<ImageEntity>()
-            .Where(row => row.ProjectId == projectId && row.FileName == fileName)
-            .OrderBy(row => row.RelPath)
-            .First();
     }
 
     public void Dispose()

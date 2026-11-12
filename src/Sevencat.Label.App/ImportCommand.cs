@@ -104,16 +104,17 @@ internal sealed record ImportCommand(
 
 internal static class ImportCommandRunner
 {
-    public static async Task<int> RunAsync(ImportCommand command, string databasePath)
+    public static async Task<int> RunAsync(ImportCommand command, StartupOptions startup)
     {
         ArgumentNullException.ThrowIfNull(command);
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        ArgumentNullException.ThrowIfNull(startup);
 
         AttachConsole(-1);
 
         // 库由容器开（--output 目录里的 annotrain.db），导入服务注入同一个实例
         using ServiceProvider provider = new ServiceCollection()
-            .AddAnnotrainDatabase(databasePath)
+            .AddSingleton(startup)
+            .AddAnnotrainDatabase(startup)
             .AddAnnotrainCore("label")
             .AddAnnotrainLabel()
             .BuildServiceProvider();

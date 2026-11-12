@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Train.App.Localization"
+        x:Class="Sevencat.Train.App.Views.TrainingParamsDialog"
+        Title="{l:Loc Train.ParamsTitle}"
+        Width="500" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock Text="{l:Loc Train.ParamsTitle}" FontSize="16" FontWeight="SemiBold" />
+
+    <StackPanel Spacing="4">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="epochs" Width="70" FontSize="13" VerticalAlignment="Center" />
+        <NumericUpDown x:Name="EpochsBox" Minimum="1" Maximum="1000" Increment="1"
+                       FormatString="0" Width="130" />
+      </StackPanel>
+      <TextBlock Text="{l:Loc Train.EpochsHint}" FontSize="12" Opacity="0.6"
+                 TextWrapping="Wrap" Margin="78,0,0,0" />
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="batch" Width="70" FontSize="13" VerticalAlignment="Center" />
+        <NumericUpDown x:Name="BatchBox" Minimum="1" Maximum="64" Increment="1"
+                       FormatString="0" Width="130" />
+      </StackPanel>
+      <TextBlock Text="{l:Loc Train.BatchHint}" FontSize="12" Opacity="0.6"
+                 TextWrapping="Wrap" Margin="78,0,0,0" />
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="imgsz" Width="70" FontSize="13" VerticalAlignment="Center" />
+        <NumericUpDown x:Name="ImageSizeBox" Minimum="64" Maximum="1536" Increment="32"
+                       FormatString="0" Width="130" />
+      </StackPanel>
+      <TextBlock Text="{l:Loc Train.ImageSizeHint}" FontSize="12" Opacity="0.6"
+                 TextWrapping="Wrap" Margin="78,0,0,0" />
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="{l:Loc Train.Cancel}" Click="OnCancel" MinWidth="76" />
+      <Button Content="{l:Loc Train.Ok}" Click="OnOk" MinWidth="76" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+
+</Window>

@@ -16,6 +16,9 @@ internal static class Program
             return 1;
         }
 
+        // exe 同级的 .env 先填进环境变量：--data / --db 之外的设置都从这里来
+        AppEnvironment.LoadDotEnv();
+
         // --data <目录>：数据根目录（配置库 / 训练产物 / 日志），默认 exe 同级 data
         AppDataPaths.Initialize(AppDataPaths.ReadDataArgument(args));
         AppDataPaths.EnsureCreated();

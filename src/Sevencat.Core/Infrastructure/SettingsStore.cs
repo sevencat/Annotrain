@@ -1,7 +1,6 @@
 using System.Text.Json;
 using FreeSql;
 using FreeSql.DataAnnotations;
-using Sevencat.Core.Dataset.TinyLabel;
 
 namespace Sevencat.Core.Infrastructure;
 
@@ -9,8 +8,8 @@ namespace Sevencat.Core.Infrastructure;
 /// 配置读写：存在 <c>annotrain.db</c>（与项目库同一个文件）的 <c>settings</c> 表里
 /// （键 = <c>app</c>，值 = 整份 JSON）。
 /// <para>
-/// ORM 从容器注入（<see cref="TinyLabelDatabase"/> 的 <c>IFreeSql</c> 单例），这里不建连接、
-/// 也不负责关：配置、账号、项目共用同一个连接池。
+/// ORM 从容器注入（<see cref="IFreeSql"/> 单例），这里不建连接、也不负责关：配置、账号、项目共用同一个连接池。
+/// 迁移旧数据时需要库文件位置，注入 <see cref="IDatabaseLocation"/> 而不是整个库对象。
 /// 读失败返回默认配置，不因配置损坏导致无法启动；首次启动会把旧的
 /// <c>%APPDATA%\Sevencat.Annotrain\settings.json</c> 与旧版独立的 <c>data/settings.db</c> 迁进来。
 /// </para>
@@ -27,24 +26,22 @@ public sealed class SettingsStore
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly TinyLabelDatabase _database;
     private readonly IFreeSql _orm;
+    private readonly IDatabaseLocation _location;
 
-    public SettingsStore(TinyLabelDatabase database)
+    public SettingsStore(IFreeSql orm, IDatabaseLocation location)
     {
-        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(orm);
+        ArgumentNullException.ThrowIfNull(location);
 
-        _database = database;
-        _orm = database.Orm;
+        _orm = orm;
+        _location = location;
         _orm.CodeFirst.SyncStructure<SettingEntity>();
 
         // 旧版数据目录里的 settings.db 比 %APPDATA% 的 settings.json 新，先迁库；两边都有时以库为准
         MigrateLegacyDatabase();
         MigrateLegacyJson();
     }
-
-    /// <summary>配置数据库文件绝对路径（就是当前工作库）。</summary>
-    public string FilePath => _database.Path;
 
     public AppSettings Load()
     {
@@ -110,10 +107,9 @@ public sealed class SettingsStore
     /// <summary>从旧版独立的 <c>data/settings.db</c> 搬配置（新库里已有配置就不动）。</summary>
     private void MigrateLegacyDatabase()
     {
-        string? directory = Path.GetDirectoryName(FilePath);
-        string legacy = Path.Combine(directory ?? AppDataPaths.DataDirectory, AppDataPaths.LegacySettingsDatabaseFile);
+        string legacy = Path.Combine(_location.DatabaseDirectory, AppDataPaths.LegacySettingsDatabaseFile);
 
-        if (string.Equals(legacy, FilePath, StringComparison.OrdinalIgnoreCase) || !File.Exists(legacy))
+        if (string.Equals(legacy, _location.DatabasePath, StringComparison.OrdinalIgnoreCase) || !File.Exists(legacy))
         {
             return;
         }

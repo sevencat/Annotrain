@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Train.App.Localization"
+        x:Class="Sevencat.Train.App.Views.ProjectPickerDialog"
+        Title="{l:Loc Train.PickProjectTitle}"
+        Width="480" Height="430"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20" RowSpacing="10">
+    <TextBlock Grid.Row="0" Text="{l:Loc Train.PickProjectTitle}" FontSize="16" FontWeight="SemiBold" />
+
+    <TextBlock Grid.Row="1" x:Name="LibraryText" FontSize="12" Opacity="0.6"
+               TextTrimming="CharacterEllipsis" />
+
+    <Border Grid.Row="2" BorderThickness="1" BorderBrush="{DynamicResource PanelBorderBrush}"
+            CornerRadius="4" ClipToBounds="True">
+      <ListBox x:Name="ProjectList" DoubleTapped="OnOk" />
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
+      <Button Grid.Column="0" Content="{l:Loc Train.PickLibrary}" Padding="10,2" FontSize="13"
+              Click="OnChangeLibrary" ToolTip.Tip="{l:Loc Train.OpenTinyLabelTip}" />
+
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+        <Button Content="{l:Loc Train.Cancel}" MinWidth="76" Click="OnCancel" />
+        <Button Content="{l:Loc Train.Ok}" MinWidth="76" Click="OnOk" IsDefault="True" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+
+</Window>

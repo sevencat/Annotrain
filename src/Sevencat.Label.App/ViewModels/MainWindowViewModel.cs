@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Injectio.Attributes;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core;
 using Sevencat.Core.Dataset;
@@ -25,15 +26,14 @@ namespace Sevencat.Label.App.ViewModels;
 /// 不再整库装载 labelme JSON；标注窗口按行里的图片引用单独打开。
 /// </para>
 /// </summary>
+[RegisterSingleton<MainWindowViewModel>]
 public partial class MainWindowViewModel : ObservableObject
 {
     /// <summary>图片清单每页条数。</summary>
     public const int DefaultPageSize = 20;
 
-    /// <summary>标注 Web 端地址（解析一次，端口从里面取）。</summary>
-    private static readonly Uri WebAddress = new(LabelWebModule.DefaultUrl);
-
     private readonly ILogger<MainWindowViewModel> _logger;
+    private readonly ServerOptions _serverOptions;
     private readonly LabelDatasetImportService _importer;
     private readonly TinyLabelProjectCatalog _catalog;
     private readonly TinyLabelProjectService _projects;
@@ -43,7 +43,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly DatasetStoreResolver _resolver;
     private readonly AppSettings _settings;
     private readonly SettingsStore _settingsStore;
-    private readonly TinyLabelDatabase _database;
+    private readonly IDatabaseLocation _location;
 
     /// <summary>切项目时的代次：异步加载回来发现已经切走就丢弃结果。</summary>
     private int _loadVersion;
@@ -69,11 +69,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── 顶栏：标注 Web 端地址 ────────────────────────────────────────────────
 
-    /// <summary>标注 Web 端的监听地址；服务端（M3）落地前只做展示，与「打开」按钮共用。</summary>
-    public string WebUrl => LabelWebModule.DefaultUrl;
+    /// <summary>标注 Web 端的监听地址：与真正监听的是同一个值（由端口拼出，见 <see cref="ServerOptions.Url"/>）。</summary>
+    public string WebUrl => _serverOptions.Url;
 
-    /// <summary>监听端口（从 <see cref="LabelWebModule.DefaultUrl"/> 里取，避免两处写死）。</summary>
-    public int WebPort => WebAddress.Port;
+    /// <summary>监听端口（唯一来源，地址由它拼）。</summary>
+    public int WebPort => _serverOptions.Port;
 
     /// <summary>「端口 5180」（切语言后重算）。</summary>
     [ObservableProperty]
@@ -161,7 +161,7 @@ public partial class MainWindowViewModel : ObservableObject
     private int _total;
 
     /// <summary>当前库文件路径：启动时由容器开好（<c>--db</c> / 环境变量 / 数据目录），运行期不变。</summary>
-    public string DatabasePath => _database.Path;
+    public string DatabasePath => _location.DatabasePath;
 
     /// <summary>底栏左侧：数据存放位置（照 TinyLabel 的 FooterText）。</summary>
     public string FooterText => Loc.Format("Label.FooterDatabase", DatabasePath);
@@ -177,7 +177,8 @@ public partial class MainWindowViewModel : ObservableObject
     private static Localizer Loc => Localizer.Instance;
 
     public MainWindowViewModel(
-        TinyLabelDatabase database,
+        IDatabaseLocation location,
+        ServerOptions serverOptions,
         ILogger<MainWindowViewModel> logger,
         LogBuffer logBuffer,
         LabelDatasetImportService importer,
@@ -190,7 +191,8 @@ public partial class MainWindowViewModel : ObservableObject
         AppSettings settings,
         SettingsStore settingsStore)
     {
-        _database = database;
+        _location = location;
+        _serverOptions = serverOptions;
         _logger = logger;
         _importer = importer;
         _catalog = catalog;
@@ -205,7 +207,7 @@ public partial class MainWindowViewModel : ObservableObject
         DataDirectory = AppDataPaths.DataDirectory;
         _selectedLanguage = Localizer.Supported.FirstOrDefault(option => option.Code == Loc.Language);
         _categoryText = Loc.Format("Label.ManageClasses", 0);
-        _webPortText = Loc.Format("Label.WebPort", WebAddress.Port);
+        _webPortText = Loc.Format("Label.WebPort", serverOptions.Port);
         _pageText = Loc.Format("Label.PageOf", 1, 1);
         _totalText = Loc.Format("Label.TotalImages", 0);
         _projectsSummary = Loc.Format("Label.ProjectsSummary", 0, 0);
@@ -239,7 +241,7 @@ public partial class MainWindowViewModel : ObservableObject
         Title = Loc.Get("Label.Title");
         Status = Loc.Get("Label.Ready");
         CategoryText = Loc.Format("Label.ManageClasses", _classes.Count);
-        WebPortText = Loc.Format("Label.WebPort", WebAddress.Port);
+        WebPortText = Loc.Format("Label.WebPort", WebPort);
         PageText = Loc.Format("Label.PageOf", PageIndex + 1, 1);
         TotalText = Loc.Format("Label.TotalImages", 0);
         ApplyProjectFilter();
@@ -278,7 +280,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         // 数据目录跟着当前库走（库路径在 Program/App 启动时就定死了）
-        folder = Path.GetDirectoryName(_database.Path) ?? folder;
+        folder = _location.DatabaseDirectory;
 
         DataDirectory = folder;
         _settings.LastDataDirectory = folder;
