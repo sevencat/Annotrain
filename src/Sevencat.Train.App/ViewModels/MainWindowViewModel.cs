@@ -2,7 +2,12 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
+using LiveChartsCore;
+using LiveChartsCore.Measure;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
 using Microsoft.Extensions.Logging;
+using SkiaSharp;
 using Sevencat.Core;
 using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.TinyLabel;
@@ -11,6 +16,7 @@ using Sevencat.Core.Infrastructure.Logging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Simulation;
 using Sevencat.Core.Storage;
+using Sevencat.Train.Engine.Export;
 using Sevencat.Train.Engine.Training;
 
 namespace Sevencat.Train.App.ViewModels;
@@ -28,6 +34,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SettingsStore _settingsStore;
     private readonly TinyLabelProjectCatalog _catalog;
     private readonly TinyLabelDatabase _database;
+    private readonly TrainingExportService _exporter;
 
     private IDatasetStore? _store;
     private CancellationTokenSource? _training;
@@ -64,6 +71,21 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private decimal _imageSize = 640;
 
+    /// <summary>训练成哪个家族：YOLOv8 / YOLOv11 / RF-DETR。</summary>
+    public IReadOnlyList<ModelOption> ModelFamilies { get; } =
+    [
+        new ModelOption("v8", "YOLOv8"),
+        new ModelOption("v11", "YOLOv11"),
+        new ModelOption("rfdetr", "RF-DETR"),
+    ];
+
+    /// <summary>当前选的模型家族；训练时原样传给 run option 的 Family。</summary>
+    [ObservableProperty]
+    private ModelOption? _selectedModel;
+
+    /// <summary>最近一次导出的 ONNX 路径：检测按钮直接拿它推理，不再让用户挑模型文件。</summary>
+    public string LastOnnxPath { get; private set; } = string.Empty;
+
     /// <summary>epochs / batch / imgsz 在界面上只读展示，改值走「修改」对话框。</summary>
     public string EpochsText => ((int)Epochs).ToString(CultureInfo.InvariantCulture);
 
@@ -93,8 +115,25 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _runInfo = string.Empty;
 
-    /// <summary>训练曲线数据点（epoch / loss / mAP）。干跑阶段为空，控件显示占位提示。</summary>
-    public ObservableCollection<ChartPoint> Points { get; } = [];
+    // ── 训练曲线（LiveCharts）：x 轴按 epoch 序号，mAP 走左轴、loss 走右轴 ──
+
+    private const string AxisTextColor = "#37474F";
+    private const string GridColor = "#CFD8DC";
+
+    private readonly ObservableCollection<double> _lossValues = [];
+    private readonly ObservableCollection<double> _map50Values = [];
+    private readonly ObservableCollection<double> _map5095Values = [];
+
+    /// <summary>曲线序列：loss 挂第 2 根 Y 轴（右），两个 mAP 挂左轴。</summary>
+    public ISeries[] Series { get; }
+
+    public Axis[] XAxes { get; }
+
+    public Axis[] YAxes { get; }
+
+    /// <summary>还没有任何点：曲线区盖一层提示文字。</summary>
+    [ObservableProperty]
+    private bool _hasChartData;
 
     /// <summary>
     /// 库（<c>annotrain.db</c>）里的标注项目：训练的输入就是标注端写进去的那些项目，
@@ -145,7 +184,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RaiseRunState()
     {
-        OnPropertyChanged(nameof(ChartHint));
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanPause));
         OnPropertyChanged(nameof(CanResume));
@@ -175,7 +213,8 @@ public partial class MainWindowViewModel : ObservableObject
         AppSettings settings,
         SettingsStore settingsStore,
         TinyLabelProjectCatalog catalog,
-        TinyLabelDatabase database)
+        TinyLabelDatabase database,
+        TrainingExportService exporter)
     {
         _logger = logger;
         _resolver = resolver;
@@ -184,6 +223,23 @@ public partial class MainWindowViewModel : ObservableObject
         _settingsStore = settingsStore;
         _catalog = catalog;
         _database = database;
+        _exporter = exporter;
+        _selectedModel = ModelFamilies[0];
+
+        YAxes =
+        [
+            CreateAxis("mAP", minStep: 0.1, AxisPosition.Start, showSeparatorLines: true, minLimit: 0, maxLimit: 1),
+            CreateAxis("loss", minStep: null, AxisPosition.End, showSeparatorLines: false),
+        ];
+
+        XAxes = [CreateAxis("epoch", minStep: 1, AxisPosition.Start)];
+
+        Series =
+        [
+            CreateSeries(_map50Values, "mAP50", "#2E7D32"),
+            CreateSeries(_map5095Values, "mAP50-95", "#6A1B9A"),
+            CreateSeries(_lossValues, "loss", "#00796B", scalesYAt: 1),
+        ];
 
         _selectedLanguage = Localizer.Supported.FirstOrDefault(option => option.Code == Loc.Language);
 
@@ -218,7 +274,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RunInfo = string.Empty;
-        OnPropertyChanged(nameof(ChartHint));
         OnPropertyChanged(nameof(ServicePortText));
     }
 
@@ -513,6 +568,41 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── 训练 ──────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// 导出当前训练产物到 <c>{输出目录}/export</c>：<c>best.safetensors</c> + <c>model.json</c>，
+    /// <paramref name="withOnnx"/> 为真时再导出一份 <c>best.onnx</c>；导出的 ONNX 之后直接给「检测」用。
+    /// </summary>
+    public async Task ExportAsync(bool withOnnx, CancellationToken ct = default)
+    {
+        Status = Loc.Get("Train.Exporting");
+
+        try
+        {
+            string target = Path.Combine(OutputDirectory, "export");
+
+            TrainingExportResult result = await Task
+                .Run(() => _exporter.Export(OutputDirectory, target, withOnnx), ct)
+                .ConfigureAwait(true);
+
+            if (result.OnnxPath is { } onnx)
+            {
+                LastOnnxPath = onnx;
+            }
+
+            Status = result.OnnxPath is null
+                ? Loc.Format("Train.ExportWeightsDone", result.SafetensorsPath)
+                : Loc.Format("Train.ExportOnnxDone", result.OnnxPath);
+
+            AppendLog(Status);
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "导出模型失败");
+            Status = Loc.Format("Train.ExportFailed", error.Message);
+            AppendLog(Status);
+        }
+    }
+
     public async Task StartTrainingAsync()
     {
         if (IsTraining || _store is null)
@@ -528,7 +618,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsTraining = true;
         IsPaused = false;
         Progress = 0;
-        Points.Clear();
+        ClearChart();
         RunInfo = $"epochs {Epochs:0} · batch {BatchSize:0} · imgsz {ImageSize:0}";
 
         Status = Localizer.Instance.Get("Train.Training");
@@ -538,7 +628,7 @@ public partial class MainWindowViewModel : ObservableObject
         var progress = new Progress<TrainingProgress>(item =>
         {
             Progress = item.Fraction;
-            Points.Add(new ChartPoint(item.Epoch + 1, item.Loss, item.Map50));
+            PushEpoch(item.Loss, item.Map50, item.Map50_95);
             Status = $"epoch {item.Epoch + 1}/{item.TotalEpochs} · loss {item.Loss:F4} · mAP50 {item.Map50:F3}";
         });
 
@@ -548,7 +638,8 @@ public partial class MainWindowViewModel : ObservableObject
             StorageLocation.Parse(OutputDirectory),
             Epochs: (int)Epochs,
             BatchSize: (int)BatchSize,
-            ImageSize: (int)ImageSize)
+            ImageSize: (int)ImageSize,
+            Family: SelectedModel?.Id ?? "v8")
         {
             Progress = progress,
             Log = message => log.Report(message),
@@ -660,10 +751,74 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>「日志」窗口里的清空按钮。</summary>
     public void ClearLog() => LogText = string.Empty;
 
-    /// <summary>图表控件用：提示文字随状态变化。</summary>
-    public string ChartHint => IsTraining
-        ? Localizer.Instance.Get("Train.ChartRunning")
-        : Localizer.Instance.Get("Train.ChartIdle");
+    /// <summary>追加一轮指标（进度回调在 UI 线程上触发）。</summary>
+    public void PushEpoch(double loss, double map50, double map5095)
+    {
+        _lossValues.Add(loss);
+        _map50Values.Add(map50);
+        _map5095Values.Add(map5095);
+        HasChartData = true;
+    }
+
+    /// <summary>开始新一轮训练前清空曲线。</summary>
+    public void ClearChart()
+    {
+        _lossValues.Clear();
+        _map50Values.Clear();
+        _map5095Values.Clear();
+        HasChartData = false;
+    }
+
+    private static Axis CreateAxis(
+        string name,
+        double? minStep,
+        AxisPosition position,
+        bool showSeparatorLines = true,
+        double? minLimit = null,
+        double? maxLimit = null)
+    {
+        var axis = new Axis
+        {
+            Name = name,
+            Position = position,
+            ShowSeparatorLines = showSeparatorLines,
+            LabelsPaint = new SolidColorPaint(SKColor.Parse(AxisTextColor)),
+            NamePaint = new SolidColorPaint(SKColor.Parse(AxisTextColor)),
+            SeparatorsPaint = new SolidColorPaint(SKColor.Parse(GridColor)) { StrokeThickness = 1 },
+        };
+
+        if (minStep is { } step)
+        {
+            axis.MinStep = step;
+        }
+
+        if (minLimit is { } min)
+        {
+            axis.MinLimit = min;
+        }
+
+        if (maxLimit is { } max)
+        {
+            axis.MaxLimit = max;
+        }
+
+        return axis;
+    }
+
+    private static LineSeries<double> CreateSeries(
+        ObservableCollection<double> values,
+        string name,
+        string color,
+        int scalesYAt = 0)
+        => new()
+        {
+            Values = values,
+            Name = name,
+            ScalesYAt = scalesYAt,
+            GeometrySize = 0,
+            Fill = null,
+            Stroke = new SolidColorPaint(SKColor.Parse(color), 2),
+        };
 
     // ── 内部 ──────────────────────────────────────────────────────────────────
 
@@ -683,8 +838,10 @@ public partial class MainWindowViewModel : ObservableObject
         => LogText = string.IsNullOrEmpty(LogText) ? text : $"{LogText}{Environment.NewLine}{text}";
 }
 
-/// <summary>曲线上的一个点。</summary>
-public sealed record ChartPoint(int Epoch, double Loss, double Map);
+
+
+/// <summary>训练模型家族下拉的一行；Id 直接就是 <c>TrainingRunOptions.Family</c>。</summary>
+public sealed record ModelOption(string Id, string Name);
 
 /// <summary>「标注项目」下拉的一行：项目 Id 就是打开数据集时的 datasetId。</summary>
 public sealed record ProjectOption(long Id, string Name, int ImageCount, int LabeledCount)

@@ -1,4 +1,3 @@
-using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Net.Sockets;
 using Avalonia;
@@ -19,48 +18,7 @@ namespace Sevencat.Train.App.Views;
 
 public partial class MainWindow : Window
 {
-    private MainWindowViewModel? _chartSource;
-
-    public MainWindow()
-    {
-        InitializeComponent();
-
-        // 曲线是命令式控件，必须把 ViewModel 的逐轮指标喂给它，否则训练时一直是空白提示
-        DataContextChanged += (_, _) => AttachChart();
-    }
-
-    /// <summary>数据源换掉之后刷新曲线（启动自动恢复时也要调一次）。</summary>
-    public void RefreshChartHint() => AttachChart();
-
-    private void AttachChart()
-    {
-        var viewModel = DataContext as MainWindowViewModel;
-
-        if (!ReferenceEquals(_chartSource, viewModel))
-        {
-            if (_chartSource is not null)
-            {
-                _chartSource.Points.CollectionChanged -= OnPointsChanged;
-            }
-
-            _chartSource = viewModel;
-
-            if (viewModel is not null)
-            {
-                viewModel.Points.CollectionChanged += OnPointsChanged;
-            }
-        }
-
-        if (_chartSource is null)
-        {
-            return;
-        }
-
-        Chart.SetPoints(_chartSource.Points);
-        Chart.SetHint(_chartSource.ChartHint);
-    }
-
-    private void OnPointsChanged(object? sender, NotifyCollectionChangedEventArgs e) => AttachChart();
+    public MainWindow() => InitializeComponent();
 
     /// <summary>「训练参数」：epochs / batch / imgsz 收进对话框改，界面只做只读展示。</summary>
     private async void OnEditParams(object? sender, RoutedEventArgs e)
@@ -107,7 +65,6 @@ public partial class MainWindow : Window
         }
 
         await viewModel.OpenDatasetAsync(folder, format);
-        Chart.SetHint(viewModel.ChartHint);
     }
 
     /// <summary>
@@ -172,7 +129,6 @@ public partial class MainWindow : Window
 
             // 打开项目 = 拉取它的图片清单与标注，顺手记住「库 + 项目」
             await viewModel.OpenLibraryProjectAsync(database, project.Id, $"{project.Name} · #{project.Id}");
-            Chart.SetHint(viewModel.ChartHint);
             return;
         }
     }
@@ -184,6 +140,24 @@ public partial class MainWindow : Window
         if (folder is not null && DataContext is MainWindowViewModel viewModel)
         {
             viewModel.OutputDirectory = folder;
+        }
+    }
+
+    /// <summary>「导出 ONNX」：把最优权重导成 best.onnx，之后「检测」直接用它。</summary>
+    private async void OnExportOnnx(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            await viewModel.ExportAsync(withOnnx: true);
+        }
+    }
+
+    /// <summary>「导出 safetensors」：权重 + model.json（架构 / 类别 / 输入尺寸）。</summary>
+    private async void OnExportWeights(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            await viewModel.ExportAsync(withOnnx: false);
         }
     }
 
@@ -216,9 +190,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        Chart.SetHint(viewModel.ChartHint);
         await viewModel.StartTrainingAsync();
-        Chart.SetHint(viewModel.ChartHint);
     }
 
     private void OnStop(object? sender, RoutedEventArgs e)
@@ -377,7 +349,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        string modelPath = settings.AutoLabelModelPath;
+        // 优先用最近导出的 ONNX：那就是当前训练出来的模型
+        string modelPath = viewModel.LastOnnxPath;
+
+        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+        {
+            modelPath = settings.AutoLabelModelPath;
+        }
 
         if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
         {

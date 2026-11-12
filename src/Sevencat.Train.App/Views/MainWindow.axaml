@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Sevencat.Train.App.ViewModels"
         xmlns:controls="using:Sevencat.Train.App.Controls"
+        xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
         xmlns:l="using:Sevencat.Train.App.Localization"
         xmlns:loc="using:Sevencat.Core.Localization"
         x:Class="Sevencat.Train.App.Views.MainWindow"
@@ -84,7 +85,7 @@
 
     <!-- 第二行：数据集 + 训练控制 + 只读参数（同一排） / 输出目录 + 数据集统计 -->
     <Border Grid.Row="1" Classes="card" Padding="12,10">
-      <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+      <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
 
         <!-- 第一行：打开数据集 + 训练控制 + 参数，依次排开 -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="8">
@@ -145,12 +146,34 @@
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           </StackPanel>
         </Grid>
+
+        <!-- 第三行：训练成什么模型 + 导出 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{l:Loc Train.Model}" Classes="caption" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding ModelFamilies}" SelectedItem="{Binding SelectedModel}"
+                    MinWidth="120" Height="28" FontSize="13">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ModelOption">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Content="{l:Loc Train.ExportOnnx}" Padding="10,2" FontSize="13" Click="OnExportOnnx"
+                  ToolTip.Tip="{l:Loc Train.ExportOnnxTip}" />
+          <Button Content="{l:Loc Train.ExportWeights}" Padding="10,2" FontSize="13" Click="OnExportWeights"
+                  ToolTip.Tip="{l:Loc Train.ExportWeightsTip}" />
+        </StackPanel>
       </Grid>
     </Border>
 
-    <!-- 中间：训练曲线（白底自绘，靠卡片边框跟窗口底色分开） -->
-    <Border Grid.Row="2" Classes="card" Padding="0" ClipToBounds="True">
-      <controls:TrainingChart x:Name="Chart" />
+    <!-- 中间：训练曲线（LiveCharts：mAP 走左轴、loss 走右轴） -->
+    <Border Grid.Row="2" Classes="card" Padding="6" ClipToBounds="True">
+      <Grid>
+        <lvc:CartesianChart Series="{Binding Series}" XAxes="{Binding XAxes}" YAxes="{Binding YAxes}" />
+        <TextBlock Text="{l:Loc Train.ChartIdle}" FontSize="14" Opacity="0.55"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding !HasChartData}" />
+      </Grid>
     </Border>
 
     <!-- 下排：进度 + 状态 -->

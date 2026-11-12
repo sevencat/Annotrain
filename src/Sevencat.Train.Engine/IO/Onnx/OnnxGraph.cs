@@ -108,7 +108,9 @@ public sealed class OnnxGraphBuilder
         string[] outputs,
         params OnnxAttribute[] attributes)
     {
-        _nodes.Add(new OnnxNode(opType, inputs, outputs, attributes));
+        // 节点名必须唯一：ONNX Runtime 的图层优化会按节点名做融合/改名，
+        // 无 name 的节点在可变形注意力、多层重复结构里会撞名（invalid model）。
+        _nodes.Add(new OnnxNode(opType, inputs, outputs, attributes, $"{opType}_{_nodes.Count}"));
         return this;
     }
 

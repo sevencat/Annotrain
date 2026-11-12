@@ -62,8 +62,6 @@ public partial class App : Application
                 {
                     await viewModel.RestoreLastLibraryAsync();
                 }
-
-                window.RefreshChartHint();
             };
 
             desktop.Exit += (_, _) =>

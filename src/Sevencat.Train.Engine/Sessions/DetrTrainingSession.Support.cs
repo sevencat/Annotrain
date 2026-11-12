@@ -30,7 +30,15 @@ public sealed partial class DetrTrainingSession
             Depth: options.DinoDepth,
             Heads: options.DinoHeads);
 
-        var detector = new RfDetrDetector(classCount, options.Queries, dinoConfig, options.ModelHeads, device);
+        // 层数与元数据保持一致，导出时才能按同样的结构重建
+        var detector = new RfDetrDetector(
+            classCount,
+            options.Queries,
+            dinoConfig,
+            options.ModelHeads,
+            device,
+            encoderLayers: options.EncoderLayers,
+            decoderLayers: options.DecoderLayers);
 
         if (!string.IsNullOrWhiteSpace(options.DinoWeights))
         {

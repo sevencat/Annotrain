@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Sevencat.Core.Simulation;
+using Sevencat.Train.Engine.Export;
 using Sevencat.Train.Engine.Runners;
 
 namespace Sevencat.Train.Engine;
@@ -15,7 +16,10 @@ public static class EngineServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<IDatasetTrainingRunner, YoloDatasetTrainingRunner>();
+        services.AddSingleton<YoloDatasetTrainingRunner>();
+        services.AddSingleton<DetrDatasetTrainingRunner>();
+        services.AddSingleton<IDatasetTrainingRunner, DatasetTrainingRunnerDispatcher>();
+        services.AddSingleton<TrainingExportService>();
         return services;
     }
 }
