@@ -13,6 +13,12 @@ internal static class Program
             return 1;
         }
 
+        // --import <源目录> --output <目标目录>：把 YOLO / RF-DETR 数据集导成标注项目，不开窗口
+        if (ImportCommand.TryParse(args, out ImportCommand command))
+        {
+            return ImportCommandRunner.RunAsync(command).GetAwaiter().GetResult();
+        }
+
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

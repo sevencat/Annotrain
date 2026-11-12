@@ -8,7 +8,7 @@
 | 里程碑 | 主题 | 交付物 | 状态 |
 | --- | --- | --- | --- |
 | M0 | 骨架 | 两个 sln 可编译、可启动；Core 契约、DI、配置、日志、主题 | 完成（2026-11-12） |
-| M1 | 存储抽象 | `IBlobStore` 后端 + Core 接口 + YOLO/COCO/VOC/LabelMe 实现 + 探测 + 单测 | 未开始 |
+| M1 | 存储抽象 | `IBlobStore` 后端 + Core 接口 + YOLO/COCO/LabelMe codec + 三种形态探测与 Provider + 单测 | 进行中 |
 | M2 | 标注闭环 | 迁移 TinyLabel 画布与 VM，标注可读可存 | 未开始 |
 | M3 | 标注 Web | 数据集浏览、标注查看、统计、导出 | 未开始 |
 | M4 | 训练引擎 | 迁移 OmniTensorSharp 模型/训练/导出，数据管线接口化 | 未开始 |
@@ -37,12 +37,12 @@
    首版只实现 `file://`，`s3://` 留注册点。
 2. 在 `Sevencat.Core` 落定模型：`AnnotationDocument`、`Shape`、`ImageRef`、`DatasetSample`、`DatasetProbe`、`ClassCatalog`（**直接搬 TinyLabel.Shared 的定义**，只改命名空间）。
 3. 接口：`IAnnotationStore`、`IImageAnnotationCodec`、`IDatasetAnnotationCodec`、`IDatasetProbe`、`IDatasetStoreProvider`、`IDatasetStore`、`IDatasetSplit`；全部基于 `IBlobStore`，不出现路径读写。
-4. 实现（标注侧）：`CodecAnnotationStore`（按 codec 分派）放在 `Sevencat.Label`；`YoloTxtCodec`、`LabelmeCodec`、`CocoDatasetAnnotationCodec` 放在 **Core**（`Annotation/Formats`），由 `AddAnnotrainDatasets()` 统一注册——训练端读平铺数据集要用同一批 codec。`VocXmlCodec` **本期不做**，连接口实现都不留。
-5. 实现（训练侧）：`YoloDatasetStoreProvider`、`CocoDatasetStoreProvider`、`TinyLabelDatasetStoreProvider`（目录 + SQLite，搬 TinyLabel.Server 的实体与查询，`images` 表加 `Split` 列）、`FlatDatasetStoreProvider`，对外只暴露接口。
-6. 形态转换：`tinylabel` → YOLO / COCO（训练与交付必需）、YOLO ↔ COCO，统一走 codec，产出转换报告。
-7. 格式探测：`IDatasetProbe` 实现，保持"只读文件头"的性能约束（远端只读前 8KB）；四/五种形态的特征判定 + 歧义候选 + 结果缓存。
+4. 实现（标注侧）：`DatabaseAnnotationStore`（读写 SQLite，标注 JSON 存 `annotations.DocJson`）；`YoloTxtCodec`、`LabelmeCodec`、`CocoDatasetCodec` 放在 **Core**（`Annotation/Formats`、`Dataset/`），由 `AddAnnotrainDatasets()` 统一注册——导出与导入用同一批 codec。`VocXmlCodec` **本期不做**。
+5. 实现（训练侧）：`YoloDatasetStoreProvider`、`CocoDatasetStoreProvider`、`TinyLabelDatasetStoreProvider`（图片目录 + SQLite，搬 TinyLabel.Server 的实体与查询，`images` 表加 `Split` 列），对外只暴露接口。标注端只打开 `tinylabel`；YOLO / COCO 做导出目标，也支持反向导入成项目（复制图片与标注、带上 train/val）。
+6. 形态转换：`tinylabel` → YOLO / COCO（导出与交付必需）、YOLO ↔ COCO，统一走 codec，产出转换报告。
+7. 格式探测：`IDatasetProbe` 实现，保持"只读文件头"的性能约束（远端只读前 8KB）；三种形态的特征判定 + 歧义候选 + 结果缓存。
 8. 项目类型落库：`projects` 加 `Format` / `DescriptorPath` / `DetectedAt`，新建走自动检测、打开直接用库中值、提供重新检测。
-9. 坐标换算工具（原图像素 ↔ 归一化 ↔ COCO/VOC）+ 单测。
+9. 坐标换算工具（原图像素 ↔ 归一化 ↔ COCO xywh）+ 单测。
 
 验收：
 - 同一份数据用 YOLO / COCO / LabelMe 三种入口读进来，框误差 ≤ 1e-4；

@@ -13,6 +13,12 @@ internal static class Program
             return 1;
         }
 
+        // --simulate <目录>：跑一遍"生成图 → 导入标注 → 训练 → 导出 → 验证"，不开窗口
+        if (SimulationCommand.TryParse(args, out SimulationCommand command))
+        {
+            return SimulationCommandRunner.RunAsync(command).GetAwaiter().GetResult();
+        }
+
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

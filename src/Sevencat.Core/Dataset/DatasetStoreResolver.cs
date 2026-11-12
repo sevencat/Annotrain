@@ -44,6 +44,7 @@ public sealed class DatasetStoreResolver(
     public async Task<DatasetOpenResult> OpenAsync(
         StorageLocation location,
         DatasetFormat? format = null,
+        string? datasetId = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(location);
@@ -72,7 +73,7 @@ public sealed class DatasetStoreResolver(
             DescriptorPath = candidate?.DescriptorPath ?? detected.DescriptorPath,
         };
 
-        IDatasetStore store = await provider.OpenAsync(effective, ct).ConfigureAwait(false);
+        IDatasetStore store = await provider.OpenAsync(effective, datasetId, ct).ConfigureAwait(false);
 
         logger?.LogInformation(
             "数据集已打开：{Format}，根目录 {Root}，split {Splits}",

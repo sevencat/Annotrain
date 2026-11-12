@@ -82,7 +82,7 @@
 1. 把 `DatasetLocator.Detect` 的返回类型提为 `DatasetProbe` 记录，静态方法包进 `IDatasetProbe` 实现（先用 `DefaultDatasetProbe`，行为不变）。
 2. 给 `YoloDataset` / `CocoDataset` 各写一个 `IDatasetStoreProvider` 适配器；原来的 concrete 类降级为内部实现（`internal`）。
 3. 训练会话只接收 `IDatasetStore` + split 名，内部把 `DatasetSample` 转成 YOLO 的归一化 cxcywh 或 DETR 的归一化 cxcywh/xyxy。
-4. 标注侧 `IAnnotationStore` 保留签名，实现改为 `CodecAnnotationStore(codecResolver, pathRule)`；LabelMe / YOLO / VOC 各自实现 `IImageAnnotationCodec`，COCO 走 `IDatasetAnnotationCodec`。
+4. 标注侧 `IAnnotationStore` 保留签名：DB 形态走 `DatabaseAnnotationStore`；LabelMe / YOLO 各自实现 `IImageAnnotationCodec`（导出用），COCO 走 `IDatasetAnnotationCodec`。
 5. 所有实现注册到 DI，UI 与 Web 只注入接口。
 
 ## 5. 统一存储模型：形态 × 后端
@@ -91,7 +91,7 @@
 
 两层正交：
 
-- **形态**（`IDatasetStoreProvider`）：yolo / coco(RF-DETR) / tinylabel(目录+SQLite) / flat。
+- **形态**（`IDatasetStoreProvider`）：yolo / coco(RF-DETR) / tinylabel(图片目录 + SQLite)。
 - **后端**（`IBlobStore`）：file / s3 / http。
 
 ```text
@@ -112,20 +112,126 @@ IBlobStore（字节级：Exists / Stat / OpenRead / OpenReadRange / Write / Dele
 | `yolo` | `images/{split}` | `labels/{split}/*.txt` | `data.yaml` | file / s3 |
 | `coco`（RF-DETR） | `train/valid/test` | `{split}/_annotations.coco.json` | 同 json | file / s3 |
 | `tinylabel` | 项目目录 / 扫描根 | SQLite `annotations` 表 | `projects`/`images`/`project_classes` | DB 必须本地；图片可 file / s3 |
-| `flat` | 任意目录 | 同名 `.json`/`.txt` | `classes.txt` | file / s3 |
 
 约束：
 
 - `StorageLocation(scheme, root)` 描述一个后端入口；图片、标注、描述可以各指向不同后端。
 - `tinylabel` 形态没有"标注文件"，`IAnnotationStore` 换成 `DatabaseAnnotationStore`（走 FreeSql），
   与 `YoloTxtCodec` 无关；导出 YOLO/COCO 时才把表里的 JSON 过一遍 codec。
-- 训练端吃 `tinylabel` 时，split 由规则决定（按项目内划分、按审核状态、或手工列表），在 Provider 里算，不写死。
+- 训练端吃 `tinylabel` 时，split 直接取 `images.Split`（NULL = 未分配，不参与训练），不做隐式划分。
 - 除 `LocalBlobStore` 内部，代码里不允许出现 `File.*` / `Directory.*` 调用；codec 接收 `Stream`，不接收路径。
 - `OpenReadRangeAsync` 必须存在：本地是 `Seek`，远端是 `Range` 头；不然后面大图标注会很痛。
 - 列举结果允许缓存（远端 list 有延迟且可能不一致），缓存键 = location + prefix + 更新时间。
 - 写入语义只要求"覆盖写 + 完成后可见"，不要求 rename，避免被本地文件系统语义绑架。
 
-### 5.1 自动检测与项目类型
+### 5.1 三种形态的存储布局
+
+三种形态各自对应一棵固定的目录树，探测、打开、导出都围绕它们；括号里是 `IDatasetStore` 的取值来源。
+
+#### 1. 标准 YOLO（`yolo`）
+
+```text
+<root>/
+├── data.yaml                     # 入口（DatasetProbe.DescriptorPath）
+├── images/
+│   ├── train/*.jpg
+│   └── val/*.jpg
+└── labels/
+    ├── train/*.txt               # 与图片同名
+    └── val/*.txt
+```
+
+```yaml
+# data.yaml
+path: .                           # 数据集根；本项目按相对 root 处理，允许省略
+train: images/train
+val: images/val
+test: images/test                 # 可选
+names:                            # 顺序即 classId，必须从 0 连续
+  0: cat
+  1: dog
+```
+
+- 类别 ← `names`；`Splits` ← `train` / `val` / `test` 里配置了的项。
+- 标注一图一个 txt，每行 `<classId> <cx> <cy> <w> <h>`，归一化到 `[0,1]`；空文件表示无框。
+- 图片与标注分目录，靠把路径里的 `images/` 换成 `labels/` 定位（`YoloAnnotationPathRule`）。
+- 只认根目录的 `data.yaml` / `.yml`，且必须同时有 `names` 与 `train`/`val` 才算命中。
+
+#### 2. 标准 RF-DETR（`coco`）
+
+```text
+<root>/
+├── train/
+│   ├── _annotations.coco.json    # 入口，一个 json 管整个 split
+│   └── *.jpg
+├── valid/
+│   ├── _annotations.coco.json
+│   └── *.jpg
+└── test/…
+
+# 也接受 Roboflow 的变体：json 在 annotations/ 下，图片在 images/ 下
+<root>/annotations/instances_train.json + <root>/images/*.jpg
+```
+
+```json
+{
+  "images":      [{"id": 1, "file_name": "a.jpg", "width": 640, "height": 480}],
+  "annotations": [{"id": 1, "image_id": 1, "category_id": 0,
+                   "bbox": [10, 20, 100, 60], "area": 6000, "iscrowd": 0}],
+  "categories":  [{"id": 0, "name": "cat"}]
+}
+```
+
+- `bbox` 是**绝对像素 `[x, y, w, h]`**（左上角 + 宽高），写回时同样输出 xywh；内部一律转成像素 `xyxy`。
+- 类别 ← `categories`（按 `id` 映射，不要求连续）；某张图没出现在 `annotations` 里即为无框。
+- 图片位置 = json 所在目录 + `file_name`；`Splits` ← 找到的 json 所在子目录名。
+- 因为「一个 json 管整个数据集」，它走 `IDatasetAnnotationCodec`（数据集级），不是单图 codec；
+  探测时只读 json 前 8KB，确认同时出现 `"images"` 与 `"annotations"`。
+
+#### 3. 图片目录 + SQLite（`tinylabel`）
+
+```text
+<data>/
+├── annotrain.db                  # 入口（SQLite + WAL）
+└── projects/
+    └── {projectId}/…             # 图片目录（导入模式是副本，扫描模式引用原图）
+```
+
+表结构与 `F:\code\TinyLabel\src\TinyLabel.Server\Data` 一致（2026-11 版）；**主键是 SQLite 自增 `long`，不是字符串**：
+
+| 表 | 关键列（类型） | 说明 |
+| --- | --- | --- |
+| `projects` | `Id`(PK,自增 `long`)、`Name`、`Description`、`StorageMode`(`import`/`scan`)、`CreatedBy`(`long`)、`CreatedAt`、`ClosedAt` | 一行一个项目；`projects/{Id}/` 是图片目录 |
+| `images` | `Id`(PK,自增 `long`)、`ProjectId`(`long`)、`FileName`、`RelPath`、`FilePath`、`Width`、`Height`、`FileSizeBytes`、`Sha256`、`State`、`Revision`、`LockedBy`/`LockExpiresAt`、`AssigneeId`、`Remark`/`RemarkBy`/`RemarkAt`、`CreatedAt`、`UpdatedAt`、**`Split`** | 二进制不进库；用户相关列都是 `long` 用户 Id；`Split` 为 Annotrain 新增，`train`/`val`/`test`/NULL |
+| `annotations` | `ImageId`(PK,`long`，与图片一对一)、`ProjectId`、`Revision`、`DocJson`、`UpdatedBy`(`long`)、`UpdatedAt` | `DocJson` = labelme JSON 原文，一图一行 |
+| `project_classes` | `Id`(PK,自增 `long`)、`ProjectId`、`Name`、`OrderIndex`、`Color` | `OrderIndex` 即 classId，只增不复用（删类别做逻辑删除） |
+
+`images.State` 取值：`pending` / `labeled` / `reviewed` / `excluded` / `skipped`。
+
+服务端专属表（Annotrain 桌面端**不建模、不创建**，TinyLabel.Server 启动时自己 `SyncStructure` 补齐）：
+`users`、`project_members`、`settings`（键值配置）、`autolabel_schemes`。
+旧版残留已由服务端清理：`reviews` 表废弃、`users.Role` 删除、`images.ReviewComment/ReviewedBy/ReviewedAt` 删除。
+
+- 类别 ← `project_classes`（按 `OrderIndex` 排序）；`Splits` ← `images.Split` 去重，NULL 视为未分配、默认不参与训练。
+- 标注读写走 `DatabaseAnnotationStore`，用 `images.Revision` + `annotations.Revision` 做乐观锁，不碰文件。
+- 标注端**只打开这一种形态**；导出 YOLO / RF-DETR 时把 `DocJson` 交给 `LabelmeCodec` 解析，再用目标形态的 codec 写出去。
+- DB 必须落本地（WAL 需要随机写），图片位置可以另指 `file://` 或远端。
+- 已落地：`TinyLabelDatabase`（新库建四张表 + 索引 + WAL；打开旧库时缺 `images.Split` 自动 `ALTER TABLE` 补列）、
+  `TinyLabelDatasetStoreProvider`（多项目库要么库里只有一个项目，要么显式传 projectId）、
+  `DatabaseAnnotationStore`（`images.Revision` + `annotations.Revision` 同步递增做乐观锁，`UpdatedBy` 固定 0）。
+
+#### 导出产物（与 TinyLabel 现有导出保持一致）
+
+| 目标 | 目录结构 | 额外文件 |
+| --- | --- | --- |
+| `yolo` | `images/{train,val,test}/*` + `labels/{train,val,test}/*.txt` | `data.yaml`（`path` 写**目标目录绝对路径**，`train`/`val`/`test` 指向对应 `images/*`，`names` 顺序 = classId）、`classes.txt` |
+| `coco`（RF-DETR） | `train/*`、`valid/*`（源 `val` 落成 `valid`）、`test/*`；图片与 `_annotations.coco.json` 同级 | `classes.txt` |
+
+- 导出目标不能与源数据集根相同（同根直接拒绝，避免就地覆盖）。
+- 归一化框写 6 位小数；越界框会被 clamp 后仍为空则丢弃，并在报告里记 `BoxesDropped`。
+- 报告包含 `ImagesExported` / `ImagesSkipped` / `BoxesExported` / `BoxesDropped` / `Warnings`，界面直接展示。
+
+### 5.2 自动检测与项目类型
 
 用户给一个目录/文件，先判断是什么格式；判断结果必须落到项目记录里，下次直接打开。
 
@@ -135,15 +241,13 @@ IBlobStore（字节级：Exists / Stat / OpenRead / OpenReadRange / Write / Dele
 | --- | --- | --- |
 | `yolo` | 根目录有 `data.yaml`/`.yml` 且含 `names` + `train` | `images/` 与 `labels/` 成对、子目录有 `train`/`val` |
 | `coco` | json 前 8KB 同时出现 `"images"` 与 `"annotations"` | `annotations/*.json`、`train/_annotations.coco.json` |
-| `voc` | `Annotations/*.xml` + `JPEGImages/` | 图片旁同名 `.xml` |
 | `tinylabel` | `*.db` 且能连上并看到 `projects`/`images`/`annotations` 表 | 目录含 `projects/{id}` 结构 |
-| `flat` | 同目录内图片与同名 `.json`/`.txt` 并存 | `classes.txt` |
 
 项目表新增字段（`projects`）：
 
 ```csharp
 [Column(StringLength = 16, IsNullable = false)]
-public string Format { get; set; } = "yolo";        // yolo / coco / voc / tinylabel
+public string Format { get; set; } = "tinylabel";    // yolo / coco / tinylabel
 
 [Column(StringLength = 512, IsNullable = true)]
 public string? DescriptorPath { get; set; }         // data.yaml / COCO json / db 文件
@@ -157,7 +261,7 @@ public DateTime? DetectedAt { get; set; }
 - `Format`（数据格式）与已有的 `StorageMode`（Import 复制 / Scan 引用）正交，两者都要存。
 - 新建项目：自动检测 → 多候选让用户选 → 写入 `Format` + `DescriptorPath`。
 - 打开项目：直接用库里的 `Format` 定位，不重扫；只有用户点"重新检测"才探测，结果不一致给提示。
-- `voc` 识别成功后进入只读浏览，保存时提示"暂不支持"，不产生半截文件。
+- 标注端只把 `tinylabel` 作为可编辑项目打开；YOLO / RF-DETR 目录可**导出**，也可**导入**成项目（复制一份，源目录不动），不提供"打开即编辑"（见 `LabelDatasetPolicy`）。
 - 检测逻辑放在 `Sevencat.Core` 的 `IDatasetProbe` 实现里，标注端与训练端共用同一份。
 
 ## 6. 设计备忘
@@ -183,7 +287,7 @@ public DateTime? DetectedAt { get; set; }
 | Q8 | S3 实现方式 | 首版不实现；届时二选一：AWSSDK.S3（全功能但重）或 MinIO/自写 SigV4（轻量） | 未定（延后） |
 | Q9 | 远端数据集是否本地缓存 | 图片缩略图必须缓存；原始图按 Range 直读 | 未定 |
 | Q10 | `tinylabel` 形态的 train/val 划分 | 已定：`images` 表加 `Split` 列（train/val/test/NULL），不再靠推断 | 已定 |
-| Q11 | 是否把 VOC 做成第五种形态 / 实现 VOC codec | 已定：VOC 不是形态；`VocXmlCodec` 只留接口与注册点，不实现 | 已定 |
+| Q11 | 是否支持 VOC / 平铺两种形态 | 已定：**本期都不做**；`DatasetFormat` 只保留 yolo / coco / tinylabel | 已定 |
 
 ### Q10 结论：`tinylabel` 的 train/val 用数据库字段表示
 

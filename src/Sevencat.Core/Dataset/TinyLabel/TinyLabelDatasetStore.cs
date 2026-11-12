@@ -1,0 +1,281 @@
+using System.Text;
+using Microsoft.Extensions.Logging;
+using Sevencat.Core.Annotation;
+using Sevencat.Core.Annotation.Formats;
+using Sevencat.Core.Model;
+using Sevencat.Core.Storage;
+
+namespace Sevencat.Core.Dataset.TinyLabel;
+
+/// <summary>库里有多个项目、又没指定项目时抛出：让界面先选项目。</summary>
+public sealed class DatasetProjectSelectionException(IReadOnlyList<ProjectEntity> projects) : Exception(
+    $"数据库里有 {projects.Count} 个项目，请先指定：{string.Join("、", projects.Select(p => $"{p.Name}({p.Id})"))}")
+{
+    public IReadOnlyList<ProjectEntity> Projects { get; } = projects;
+}
+
+/// <summary>
+/// 「图片目录 + SQLite」形态：一个项目 = 一个数据集。
+/// 图片在目录里（<see cref="ImageEntity.FilePath"/>），类别在 <c>project_classes</c>，标注在 <c>annotations.DocJson</c>。
+/// </summary>
+public sealed class TinyLabelDatasetStore : IDatasetStore, IDisposable
+{
+    private readonly TinyLabelDatabase _db;
+    private readonly ProjectEntity _project;
+    private readonly LabelmeCodec _codec = new();
+    private readonly ILogger? _logger;
+
+    internal TinyLabelDatasetStore(
+        TinyLabelDatabase db,
+        ProjectEntity project,
+        StorageLocation root,
+        ClassCatalog classes,
+        ILogger? logger = null)
+    {
+        _db = db;
+        _project = project;
+        _logger = logger;
+        Root = root;
+        Classes = classes;
+        Splits = LoadSplits();
+    }
+
+    public string Id => "tinylabel";
+
+    public DatasetFormat Format => DatasetFormat.TinyLabelDb;
+
+    public StorageLocation Root { get; }
+
+    public StorageLocation ImageLocation => Root;
+
+    public ClassCatalog Classes { get; }
+
+    public IReadOnlyList<string> Splits { get; }
+
+    public long ProjectId => _project.Id;
+
+    public string ProjectName => _project.Name;
+
+    /// <summary>数据库文件绝对路径（标注侧据此打开 <see cref="DatabaseAnnotationStore"/>）。</summary>
+    public string DatabasePath => _db.Path;
+
+    public IDatasetSplit OpenSplit(string split) => new TinyLabelSplit(this, split);
+
+    internal async Task<IReadOnlyList<DatasetSample>> LoadAsync(string split, CancellationToken ct)
+    {
+        string key = split.Trim().ToLowerInvariant();
+
+        List<ImageEntity> images = _db.Orm.Select<ImageEntity>()
+            .Where(image => image.ProjectId == _project.Id && image.Split == key)
+            .OrderBy(image => image.RelPath)
+            .ToList();
+
+        Dictionary<long, string> docs = _db.Orm.Select<AnnotationEntity>()
+            .Where(annotation => annotation.ProjectId == _project.Id)
+            .ToList()
+            .ToDictionary(annotation => annotation.ImageId, annotation => annotation.DocJson);
+
+        var samples = new List<DatasetSample>(images.Count);
+
+        foreach (ImageEntity image in images)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            IReadOnlyList<BoxAnnotation> boxes =
+                docs.TryGetValue(image.Id, out string? json) && !string.IsNullOrWhiteSpace(json)
+                    ? ReadBoxes(json, image)
+                    : [];
+
+            samples.Add(new DatasetSample(ResolveImage(image), image.Width, image.Height, boxes));
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+
+        _logger?.LogInformation(
+            "tinylabel 数据集加载完成：项目 {Project}，split {Split}，{Samples} 张图",
+            _project.Name,
+            split,
+            samples.Count);
+
+        return samples;
+    }
+
+    private IReadOnlyList<BoxAnnotation> ReadBoxes(string json, ImageEntity image)
+    {
+        var info = new ImageInfo
+        {
+            RelativePath = image.RelPath,
+            Width = image.Width,
+            Height = image.Height,
+        };
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        AnnotationParseResult parsed = _codec.Read(stream, new AnnotationReadContext(info, Classes));
+
+        if (parsed.Warnings.Count > 0)
+        {
+            _logger?.LogDebug("图片 {Image} 的标注有 {Count} 条警告：{Warnings}",
+                image.RelPath, parsed.Warnings.Count, string.Join("；", parsed.Warnings));
+        }
+
+        var boxes = new List<BoxAnnotation>(parsed.Document.Shapes.Count);
+
+        foreach (Shape shape in parsed.Document.Shapes)
+        {
+            if (!shape.IsClosed)
+            {
+                continue;
+            }
+
+            int classId = Classes.IndexOf(shape.Label);
+            if (classId < 0)
+            {
+                continue;
+            }
+
+            RectD rect = BoxConvert.Clamp(shape.Bounds, image.Width, image.Height);
+            if (!rect.IsEmpty)
+            {
+                boxes.Add(BoxAnnotation.FromRect(classId, rect));
+            }
+        }
+
+        return boxes;
+    }
+
+    /// <summary>图片落在数据集根下就用相对路径，落在根外（扫描模式）就按文件所在目录建 location。</summary>
+    private ImageRef ResolveImage(ImageEntity image)
+    {
+        string full = image.FilePath.Replace('\\', '/');
+
+        if (Root.Scheme == StorageLocation.FileScheme)
+        {
+            string root = Root.Root.Replace('\\', '/').TrimEnd('/');
+
+            if (full.StartsWith($"{root}/", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ImageRef(full[(root.Length + 1)..], Root);
+            }
+        }
+
+        string relative = image.RelPath.Replace('\\', '/').TrimStart('/');
+        return new ImageRef(relative, Root);
+    }
+
+    private IReadOnlyList<string> LoadSplits()
+    {
+        List<string?> values = _db.Orm.Select<ImageEntity>()
+            .Where(image => image.ProjectId == _project.Id && image.Split != null)
+            .ToList(image => image.Split);
+
+        return [.. values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    public void Dispose() => _db.Dispose();
+
+    private sealed class TinyLabelSplit(TinyLabelDatasetStore owner, string name) : IDatasetSplit
+    {
+        public string Name => name;
+
+        public Task<IReadOnlyList<DatasetSample>> LoadSamplesAsync(CancellationToken ct = default)
+            => owner.LoadAsync(name, ct);
+    }
+}
+
+/// <summary>「图片目录 + SQLite」形态的 Provider：探测命中 <see cref="DatasetFormat.TinyLabelDb"/> 时负责打开。</summary>
+public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory = null) : IDatasetStoreProvider
+{
+    public string Id => "tinylabel";
+
+    public DatasetFormat Format => DatasetFormat.TinyLabelDb;
+
+    public DatasetStoreCapabilities Capabilities { get; } = new(CanWrite: true, HasSplits: true);
+
+    public bool CanOpen(DatasetProbe probe)
+        => probe.Format is DatasetFormat.TinyLabelDb or DatasetFormat.Ambiguous;
+
+    /// <summary>库里只有一个项目时直接打开；有多个会抛 <see cref="DatasetProjectSelectionException"/>。</summary>
+    public Task<IDatasetStore> OpenAsync(DatasetProbe probe, CancellationToken ct = default)
+        => OpenAsync(probe, datasetId: null, ct);
+
+    /// <summary><paramref name="datasetId"/> 即项目 Id（long）；为空时要求库里只有一个项目。</summary>
+    public Task<IDatasetStore> OpenAsync(DatasetProbe probe, string? datasetId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+
+        long? projectId = null;
+        if (!string.IsNullOrWhiteSpace(datasetId))
+        {
+            if (!long.TryParse(datasetId, out long parsed))
+            {
+                throw new ArgumentException($"项目 Id 必须是数字：{datasetId}", nameof(datasetId));
+            }
+
+            projectId = parsed;
+        }
+
+        string dbPath = ResolveDatabasePath(probe);
+        TinyLabelDatabase db = TinyLabelDatabase.Open(dbPath, createIfMissing: false);
+
+        try
+        {
+            ProjectEntity project = SelectProject(db, projectId);
+            ClassCatalog classes = db.LoadClasses(project.Id);
+
+            IDatasetStore store = new TinyLabelDatasetStore(
+                db,
+                project,
+                probe.Root,
+                classes,
+                loggerFactory?.CreateLogger<TinyLabelDatasetStore>());
+
+            return Task.FromResult(store);
+        }
+        catch
+        {
+            db.Dispose();
+            throw;
+        }
+    }
+
+    private static string ResolveDatabasePath(DatasetProbe probe)
+    {
+        if (probe.Root.Scheme != StorageLocation.FileScheme)
+        {
+            throw new NotSupportedException("数据库形态只支持本地 file:// 数据集根：SQLite 的 WAL 需要本地随机写");
+        }
+
+        if (string.IsNullOrWhiteSpace(probe.DescriptorPath))
+        {
+            throw new InvalidOperationException("探测结果缺少 .db 文件路径");
+        }
+
+        string relative = probe.DescriptorPath.Replace('/', Path.DirectorySeparatorChar);
+        return Path.Combine(probe.Root.Root, relative);
+    }
+
+    private static ProjectEntity SelectProject(TinyLabelDatabase db, long? projectId)
+    {
+        List<ProjectEntity> projects = db.Orm.Select<ProjectEntity>()
+            .OrderBy(project => project.CreatedAt)
+            .ToList();
+
+        if (projects.Count == 0)
+        {
+            throw new InvalidDataException($"数据库里没有项目：{db.Path}");
+        }
+
+        if (projectId is { } id)
+        {
+            return projects.FirstOrDefault(project => project.Id == id)
+                   ?? throw new InvalidOperationException($"数据库里没有项目 {id}");
+        }
+
+        return projects.Count == 1 ? projects[0] : throw new DatasetProjectSelectionException(projects);
+    }
+
+}

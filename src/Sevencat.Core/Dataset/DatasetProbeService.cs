@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
-using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset;
@@ -40,11 +39,7 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
 
         var yolo = new List<string>();
         var coco = new List<string>();
-        var voc = new List<string>();
         var db = new List<string>();
-        bool flat = false;
-
-        HashSet<string> labelStems = CollectLabelStems(files);
 
         foreach (string file in files)
         {
@@ -74,17 +69,9 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
                     coco.Add(file);
                 }
             }
-            else if (extension == ".xml" && file.StartsWith("Annotations/", StringComparison.OrdinalIgnoreCase))
-            {
-                voc.Add(file);
-            }
-            else if (ImageFiles.IsSupported(extension))
-            {
-                flat |= labelStems.Contains(StemKey(file));
-            }
         }
 
-        DatasetProbe probe = Decide(location, yolo, coco, voc, db, flat);
+        DatasetProbe probe = Decide(location, yolo, coco, db);
         logger?.LogInformation(
             "数据集探测：{Format}，位置 {Location}，文件 {Count} 个，{Message}",
             probe.Format,
@@ -99,9 +86,7 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
         StorageLocation location,
         List<string> yolo,
         List<string> coco,
-        List<string> voc,
-        List<string> db,
-        bool flat)
+        List<string> db)
     {
         var candidates = new List<(DatasetFormat Format, string? Descriptor, string Message)>();
 
@@ -118,16 +103,6 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
         if (db.Count > 0)
         {
             candidates.Add((DatasetFormat.TinyLabelDb, db[0], $"目录 + 数据库（{Path.GetFileName(db[0])}）"));
-        }
-
-        if (voc.Count > 0)
-        {
-            candidates.Add((DatasetFormat.Voc, voc[0], $"Pascal VOC（{voc.Count} 个 xml，仅只读）"));
-        }
-
-        if (flat)
-        {
-            candidates.Add((DatasetFormat.Flat, null, "平铺：图片与同名标注文件并存"));
         }
 
         if (candidates.Count == 0)
@@ -165,8 +140,8 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
         location,
         null,
         [],
-        $"{reason}。期望结构：YOLO(data.yaml + images/labels) / COCO(train/_annotations.coco.json) / " +
-        "TinyLabel(*.db + projects) / VOC(Annotations + JPEGImages)");
+        $"{reason}。支持的结构：YOLO(data.yaml + images/labels) / RF-DETR(COCO json) / " +
+        "图片目录 + TinyLabel 数据库(*.db)");
 
     private static bool IsCocoCandidate(string path)
     {
@@ -252,26 +227,4 @@ public sealed class DatasetProbeService(BlobStoreRegistry registry, ILogger<Data
         }
     }
 
-    /// <summary>收集所有 .json / .txt 标注的「目录/文件名」键，供平铺布局做 O(1) 同名判定。</summary>
-    private static HashSet<string> CollectLabelStems(List<string> files)
-    {
-        var stems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (string file in files)
-        {
-            string extension = Path.GetExtension(file).ToLowerInvariant();
-            if (extension is ".json" or ".txt")
-            {
-                stems.Add(StemKey(file));
-            }
-        }
-
-        return stems;
-    }
-
-    private static string StemKey(string file)
-    {
-        string directory = Path.GetDirectoryName(file)?.Replace('\\', '/') ?? string.Empty;
-        return $"{directory}/{Path.GetFileNameWithoutExtension(file)}";
-    }
 }

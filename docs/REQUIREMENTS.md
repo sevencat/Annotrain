@@ -18,9 +18,9 @@
 
 | 编号 | 需求 |
 | --- | --- |
-| F-1.1 | 数据集目录组织可插拔：YOLO（`data.yaml` + `images/labels`）、COCO / Roboflow（`annotations/*.json`、`train/_annotations.coco.json`）、平铺布局（图片与标注同目录）。 |
-| F-1.2 | 标注格式可插拔：首版实现 YOLO txt、COCO json、LabelMe json；**Pascal VOC xml 只定义接口与注册点，不实现**。 |
-| F-1.3 | 单图格式与数据集级格式**分开抽象**：YOLO/VOC/LabelMe 是一图一文件，COCO 是整个数据集一个 json，不能强行合成一个接口。 |
+| F-1.1 | 数据集目录组织可插拔，**首期只做三种**：标准 YOLO（`data.yaml` + `images/labels`）、标准 RF-DETR（COCO：`annotations/*.json`、`train/_annotations.coco.json`）、图片目录 + SQLite（类别与标注都在库里）。平铺目录、Pascal VOC **本期不做**。 |
+| F-1.2 | 标注格式可插拔：首版实现 YOLO txt、COCO json、LabelMe json（LabelMe 作为 DB 里标注 JSON 的存法）；**Pascal VOC xml 本期不做**。 |
+| F-1.3 | 单图格式与数据集级格式**分开抽象**：YOLO/LabelMe 是一图一文件，COCO 是整个数据集一个 json，不能强行合成一个接口。 |
 | F-1.4 | 目录探测走接口，只读文件头/文件名，不解析全量标注（几万张图的 COCO 不能在这里卡住）。 |
 | F-1.5 | 类别表来源可配：`data.yaml` / `classes.txt` / COCO `categories` / 手工维护，支持导出。 |
 | F-1.6 | 训练引擎只消费统一模型 `DatasetSample`（图片路径 + 原始宽高 + 原图像素 xyxy 框 + classId），格式差异在 Loader 内消化。 |
@@ -32,7 +32,7 @@
 | F-1.12 | 除 `LocalBlobStore` 内部外，**任何代码不得直接调用 `File.*` / `Directory.*`**；格式 codec、数据集 loader、画布、训练器一律只依赖接口。 |
 | F-1.13 | 首版只实现 `file://`；`s3://` 等实现留出接口与注册点，不写空壳代码。 |
 
-### 2.1.1 必须支持的四种存储形态
+### 2.1.1 首期必须支持的三种存储形态
 
 「形态」决定图片与标注怎么组织，「后端」决定字节存在哪里，两者正交。同一形态可跑在 `file://` 或 `s3://` 上。
 
@@ -41,11 +41,10 @@
 | YOLO 布局 | `yolo` | `images/{train,val,test}/` | `labels/{train,val,test}/*.txt` | `data.yaml`（`path/train/val/names`） | file / s3 |
 | RF-DETR（COCO/Roboflow） | `coco` | `train/` `valid/` `test/` 或 `images/` | `{split}/_annotations.coco.json` 或 `annotations/instances_*.json` | 同上 json | file / s3 |
 | TinyLabel 目录 + 数据库 | `tinylabel` | 项目目录（导入副本）或扫描根（只读引用） | SQLite `annotations` 表（JSON 文本） | `projects` / `images` / `project_classes` 表 | DB 本地 + 图片 file/s3 |
-| 平铺 | `flat` | 任意目录 | 同名 `.json` / `.txt` | `classes.txt` | file / s3 |
 
 | 编号 | 需求 |
 | --- | --- |
-| F-1.14 | 四种形态各有一个 `IDatasetStoreProvider`；探测时按特征判定，多个命中则让用户选（沿用原 `Ambiguous` 语义）。 |
+| F-1.14 | 三种形态各有一个 `IDatasetStoreProvider`；探测时按特征判定，多个命中则让用户选（沿用原 `Ambiguous` 语义）。 |
 | F-1.15 | `tinylabel` 形态沿用 FreeSql + SQLite（WAL），图片二进制不进库，只存相对路径 + sha256；标注仍是 JSON 文本。DB 位置与图片位置分开配置。`images` 表**增加 `Split` 列**（`train`/`val`/`test`/NULL），与 `State` 正交。 |
 | F-1.16 | 训练端必须能直接消费 `yolo` / `coco` / `tinylabel` 三种形态：`tinylabel` 的 train/val 直接取 `images.Split`，NULL 视为未分配，默认不参与训练并在界面提示。 |
 | F-1.17 | 形态之间可转换：`tinylabel` → YOLO / COCO 为必需（训练与交付都要），YOLO ↔ COCO 为应交由同一套 codec 完成的常见操作。 |
@@ -57,12 +56,12 @@
 
 | 编号 | 需求 |
 | --- | --- |
-| F-1.19 | **自动检测**：用户选一个目录或文件，系统探测出形态（yolo / coco(RF-DETR) / voc / tinylabel / flat），返回格式、描述文件路径、候选列表与一句人话说明。 |
-| F-1.20 | **项目类型落库**：`projects` 表增加 `Format` 字段（`yolo` / `coco` / `voc` / `tinylabel`，即用户可理解的"项目类型"），新建/导入时把检测结果写进去。 |
+| F-1.19 | **自动检测**：用户选一个目录，系统探测出形态（`yolo` / `coco` / `tinylabel`），返回格式、入口文件、候选列表与一句人话说明。 |
+| F-1.20 | **项目类型落库**：`projects` 表增加 `Format` 字段（`yolo` / `coco` / `tinylabel`，即用户可理解的"项目类型"），新建/导入时把检测结果写进去。 |
 | F-1.21 | 检测出多个候选（歧义）或识别失败时，必须让用户选/手工指定，不许静默猜一个。 |
 | F-1.22 | 项目打开时优先用库里存的 `Format` 直接定位，不再重扫；提供"重新检测"入口，结果与库中不一致时提示而不是偷偷改。 |
 | F-1.23 | 检测结果可缓存：`DescriptorPath`（`data.yaml` / COCO json / DB 文件）与 `DetectedAt` 一并写入项目，供下次直接打开。 |
-| F-1.24 | `voc` 能被识别并展示（只读浏览），但编辑保存明确提示"暂不支持"，因为 `VocXmlCodec` 未实现。 |
+| F-1.24 | **端侧边界**：标注端**只打开** `tinylabel` 形态（图片目录 + DB）作为可编辑项目；YOLO / RF-DETR 在标注端可作为**导出目标**，也可**导入**成项目（复制图片与标注，连 train/val 一起搬，源目录只读）。训练端三种形态都能读（只认 `IDatasetStoreProvider`），不受此限制。 |
 
 ### 2.2 标注
 
@@ -161,10 +160,10 @@ public sealed record StorageKey(StorageLocation Location, string RelativePath);
 
 // ===== 标注侧 =====
 
-// 单图标注格式：YOLO txt / VOC xml / LabelMe json
+// 单图标注格式：YOLO txt / LabelMe json（导出与 DB 内 JSON 都用它）
 public interface IImageAnnotationCodec
 {
-    string Id { get; }                                  // "yolo" / "voc" / "labelme"
+    string Id { get; }                                  // "yolo" / "labelme"
     IReadOnlyCollection<string> Extensions { get; }
     AnnotationDocument Read(Stream stream, ImageRef image, out IReadOnlyList<string> warnings);
     void Write(Stream stream, AnnotationDocument doc, AnnotationWriteContext context);
@@ -207,17 +206,15 @@ public enum DatasetFormat
 {
     Unknown = 0,
     Yolo = 1,          // data.yaml + images/labels
-    Coco = 2,          // COCO / Roboflow（RF-DETR 直接用这个）
-    TinyLabelDb = 3,   // 目录 + SQLite
-    Flat = 4,          // 图片与标注同目录
-    Voc = 5,           // Pascal VOC：仅识别与只读浏览，codec 暂不实现
+    Coco = 2,          // RF-DETR（COCO / Roboflow）
+    TinyLabelDb = 3,   // 图片目录 + SQLite（类别与标注在库里）
     Ambiguous = 9,     // 多个命中，需用户选
 }
 
-// 一种存储形态的提供者：能否处理 + 打开（四种形态各一个实现）
+// 一种存储形态的提供者：能否处理 + 打开（三种形态各一个实现）
 public interface IDatasetStoreProvider
 {
-    string Id { get; }                  // "yolo" / "coco" / "tinylabel" / "flat"
+    string Id { get; }                  // "yolo" / "coco" / "tinylabel"
     DatasetFormat Format { get; }
     DatasetStoreCapabilities Capabilities { get; }   // 可写？天然含 split？随机访问？
     bool CanOpen(DatasetProbe probe);

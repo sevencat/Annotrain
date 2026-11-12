@@ -5,29 +5,107 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Icon="/Assets/app.png"
-        Width="1280" Height="800"
+        Width="1360" Height="860"
         WindowStartupLocation="CenterScreen">
 
-  <Grid RowDefinitions="*,180">
-    <Grid Grid.Row="0" ColumnDefinitions="240,*">
-      <Border Grid.Column="0" Background="{DynamicResource MaterialDesignPaper}">
-        <StackPanel Margin="16" Spacing="8">
-          <TextBlock Text="Annotrain Label" FontSize="20" FontWeight="SemiBold" />
-          <TextBlock Text="数据集" Opacity="0.7" Margin="0,16,0,0" />
-          <TextBlock Text="标注" Opacity="0.7" />
-          <TextBlock Text="设置" Opacity="0.7" />
-        </StackPanel>
-      </Border>
+  <Grid RowDefinitions="Auto,*,200">
+    <!-- 顶部工具栏 -->
+    <Border Grid.Row="0" Padding="12,10" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource MaterialDesignDivider}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button Grid.Column="0" Content="打开项目…" Click="OnOpenProject" />
+        <TextBlock Grid.Column="1" Text="{Binding ProjectTitle}" Margin="12,0"
+                   VerticalAlignment="Center" FontWeight="SemiBold" />
+        <TextBlock Grid.Column="2" Text="{Binding Status}" VerticalAlignment="Center" Opacity="0.7" />
+      </Grid>
+    </Border>
 
-      <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-        <TextBlock Text="{Binding Title}" FontSize="24" HorizontalAlignment="Center" />
-        <TextBlock Text="{Binding Status}" Opacity="0.7" HorizontalAlignment="Center" />
-        <TextBlock Text="M0 骨架：导航与主题已就位，M1 接入数据集与格式探测。"
-                   Opacity="0.5" HorizontalAlignment="Center" />
-      </StackPanel>
+    <!-- 主体：左边数据集/导入，右边预览 -->
+    <Grid Grid.Row="1" ColumnDefinitions="360,*">
+      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="12" RowSpacing="8">
+        <Border Grid.Row="0" Padding="12" CornerRadius="6" BorderThickness="1"
+                BorderBrush="{DynamicResource MaterialDesignDivider}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="从现有数据集导入" FontWeight="SemiBold" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.6" FontSize="11"
+                       Text="YOLO（data.yaml）或 RF-DETR（COCO json）：图片、标注与 train/val 一起导入。" />
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Grid.Column="0" Text="{Binding ImportSource}"
+                       PlaceholderText="源目录（data.yaml / COCO json）" />
+              <Button Grid.Column="1" Content="…" Click="OnPickSource" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Grid.Column="0" Text="{Binding ImportDestination}"
+                       PlaceholderText="目标目录（annotrain.db 放这里）" />
+              <Button Grid.Column="1" Content="…" Click="OnPickDestination" />
+            </Grid>
+
+            <TextBox Text="{Binding ImportProjectName}" PlaceholderText="项目名（留空取源目录名）" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="导入" Click="OnImport" IsEnabled="{Binding !IsImporting}" />
+              <TextBlock Text="导入中…" VerticalAlignment="Center" Opacity="0.7"
+                         IsVisible="{Binding IsImporting}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="1" Text="图片" FontWeight="SemiBold" Margin="2,4,0,0" />
+
+        <ListBox Grid.Row="2" ItemsSource="{Binding Images}"
+                 SelectedItem="{Binding SelectedImage}"
+                 BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProjectImageViewModel">
+              <StackPanel Spacing="2" Margin="0,2">
+                <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Summary}" FontSize="11" Opacity="0.6" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="0,12,12,12" RowSpacing="8">
+        <TextBlock Grid.Row="0" Text="{Binding SelectionInfo}" Opacity="0.7" TextWrapping="Wrap" />
+
+        <Border Grid.Row="1" CornerRadius="6" Background="#1E1E1E" ClipToBounds="True">
+          <Viewbox Stretch="Uniform" Margin="8">
+            <Canvas Width="{Binding PreviewWidth}" Height="{Binding PreviewHeight}">
+              <Image Source="{Binding Preview}"
+                     Width="{Binding PreviewWidth}" Height="{Binding PreviewHeight}" />
+
+              <ItemsControl ItemsSource="{Binding OverlayBoxes}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemContainerTheme>
+                  <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding X}" />
+                    <Setter Property="Canvas.Top" Value="{ReflectionBinding Y}" />
+                  </ControlTheme>
+                </ItemsControl.ItemContainerTheme>
+
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:BoxOverlay">
+                    <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                               Stroke="#22D3EE" StrokeThickness="2" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Canvas>
+          </Viewbox>
+        </Border>
+      </Grid>
     </Grid>
 
-    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}"
+    <!-- 日志 -->
+    <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}"
             Background="{DynamicResource MaterialDesignBackground}">
       <DockPanel Margin="12,8">
         <TextBlock DockPanel.Dock="Top" Text="日志" FontWeight="SemiBold" Margin="0,0,0,6" />

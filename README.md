@@ -34,17 +34,69 @@
 | YOLO | `images/{split}` | `labels/{split}/*.txt` | `data.yaml` 描述 |
 | COCO / RF-DETR | `train/valid/test` | `{split}/_annotations.coco.json` | 兼容 annotations/instances |
 | TinyLabel 目录+DB | 项目目录 / 扫描根 | SQLite `annotations` 表 | DB 需本地，图片可远端；train/val 用 `images.Split` 字段 |
-| 平铺 | 任意目录 | 同名 `.json` / `.txt` | `classes.txt` |
-| VOC | `JPEGImages/` | `Annotations/*.xml` | 仅识别与只读浏览，编辑暂不实现 |
+
+端侧边界：**标注端打开 `tinylabel`（图片目录 + DB）**；YOLO / RF-DETR 既可导出，也可**导入**成项目
+（复制图片与标注，连 train/val 一起搬）。训练端三种形态都能读（只认 `IDatasetStoreProvider`）。
+平铺目录与 Pascal VOC 本期不做。
+
+三种形态的目录树、`data.yaml` / COCO json 字段、SQLite 表结构见 [MISC 5.1 三种形态的存储布局](docs/MISC.md)。
 
 打开目录时自动探测格式，检测结果记在项目记录里（`Format` / `DescriptorPath`），下次直接打开。
+
+## 导入现有数据集（YOLO / RF-DETR）
+
+手上有现成的 YOLO / RF-DETR 数据集时，不必重新标：直接导进来继续改。
+
+```powershell
+# 标注程序里：主界面「从现有数据集导入」，选源目录 / 目标目录 / 项目名，点「开始导入」
+# 或不开窗口走命令行：
+Sevencat.Label.App.exe --import <源目录> --output <目标目录> [--name 项目名] [--format yolo|coco] [--split train,val]
+```
+
+| 源形态 | 识别依据 | 导入成什么 |
+| --- | --- | --- |
+| YOLO | 根目录 `data.yaml` 的 `train` / `val` / `test` | 每个 split 单独一个子目录，标签转 labelme JSON |
+| RF-DETR (COCO) | `train/`、`valid/`、`test/` 下的 `_annotations.coco.json` | `valid` 归一成 `val`；多个 split 的类别取并集 |
+
+产物在 `--output` 目录：`annotrain.db`（项目 / 类别 / 图片 / 标注）、`projects/{项目Id}/{split}/`（图片副本）、
+`import-report.txt`（每个 split 的图数与告警）。源目录只读，导入目标不能与源相同。
+
+导入完就是普通标注项目：界面会自动打开它，左侧按 split 列出全部图片（每行带尺寸与框数），
+点一张就能看到图片和已有的框。之后可以继续标注、导出 YOLO / RF-DETR，或者直接给训练端按 `images.Split` 训练。
+`--format` 只在探测同时命中多种形态时才需要。
+
+打开一个已有项目（跳过导入）：
+
+```powershell
+Sevencat.Label.App.exe --open <项目目录>
+```
+
+## 模拟流程（不用准备数据）
+
+不接真实数据也能把整条链路跑一遍：
+
+```powershell
+Sevencat.Train.App.exe --simulate %TEMP%\annotrain-sim-demo --count 20 --width 640 --height 480
+```
+
+| 步骤 | 做什么 | 产物（都在 `--simulate` 目录下） |
+| --- | --- | --- |
+| 1 生成 | 随机画正方形 / 三角形 / 圆形，**平铺输出且不带标注** | `flat/*.png` |
+| 2 导入 + 标注 | 建数据库项目、写图片、把每个形状框出来（±2px 抖动模拟手标） | `dataset/annotrain.db`、`dataset/projects/1/*` |
+| 3 训练（直接读库） | 训练程序按 `images.Split` 装载数据（当前是干跑：完整装载 + 校验 + 摘要） | `training-db/` |
+| 4 导出 + 训练 | 导出 YOLO（`data.yaml` / `images/` / `labels/` / `classes.txt`），再从导出目录训练一遍 | `export-yolo/`、`training-yolo/` |
+| 5 验证 | 用生成时的真值反查标注与导出结果 | `simulation-report.txt` |
+
+退出码 `0` 表示验证通过；`2` 表示有缺失 / 多余 / 超容差。真实训练（YOLO / RF-DETR 引擎）在 M4 接入，
+替换 `IDatasetTrainingRunner` 的实现即可，流程与验证都不用改。同一套流程也有单测：
+`tests/Sevencat.Train.Engine.Tests/SimulationPipelineTests.cs`。
 
 ## 解决方案结构
 
 ```text
 Sevencat.Label.sln
   src/Sevencat.Core/              跨解决方案契约：存储接口、公共模型、坐标与图像抽象、格式 codec
-  src/Sevencat.Label/             标注业务：标注入库、编辑器逻辑、原子写盘
+  src/Sevencat.Label/             标注业务：标注入库、编辑器逻辑、原子写盘、项目浏览与导入
   src/Sevencat.Label.App/         标注程序（exe）：画布、交互、ViewModel、窗口
   src/Sevencat.Label.Web/         标注 Web：Minimal API + 内嵌页面 + 数据集统计
   tests/Sevencat.Label.Tests/     格式读写、坐标换算、目录探测
@@ -88,8 +140,9 @@ M0（骨架）已完成：两个解决方案各 5 个项目，Avalonia 12.1.5 + 
 DI / 配置 / 日志（NLog 按天落盘 + 界面日志面板）可用，两个桌面应用可启动。
 
 M1（存储抽象）进行中：`IBlobStore`（本地后端 + 按 scheme 的注册表）、YOLO / LabelMe / COCO codec、
-五种形态的格式探测、yolo / coco / flat 的 Provider 与统一打开入口 `DatasetStoreResolver` 已完成并有单测；
-`tinylabel`（目录 + SQLite）形态、形态转换、项目表落库还没做。
+三种形态的格式探测与 Provider（yolo / coco / tinylabel）、统一打开入口 `DatasetStoreResolver` 已完成并有单测；
+`tinylabel` 的 SQLite 读写（`TinyLabelDatasetStore` + `DatabaseAnnotationStore`，乐观锁 + 多项目选择）也已可用。
+接下来是导出（DB → YOLO / RF-DETR）与项目表落库。
 
 应用图标在 `assets/app.ico`（由 `docs/image_ico.png` 生成，含 16–256 多尺寸），两个 exe 与窗口都用它。
 

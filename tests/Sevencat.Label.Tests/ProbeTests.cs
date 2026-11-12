@@ -39,18 +39,6 @@ public class ProbeTests
     }
 
     [Fact]
-    public async Task Detects_Voc()
-    {
-        using var workspace = new TestWorkspace();
-        workspace.WriteText("Annotations/a.xml", "<annotation />");
-        workspace.WriteText("JPEGImages/a.jpg", "x");
-
-        DatasetProbe probe = await CreateProbe().DetectAsync(StorageLocation.FromPath(workspace.Root));
-
-        Assert.Equal(DatasetFormat.Voc, probe.Format);
-    }
-
-    [Fact]
     public async Task Detects_TinyLabelDatabase()
     {
         using var workspace = new TestWorkspace();
@@ -61,18 +49,6 @@ public class ProbeTests
 
         Assert.Equal(DatasetFormat.TinyLabelDb, probe.Format);
         Assert.Equal("annotrain.db", probe.DescriptorPath);
-    }
-
-    [Fact]
-    public async Task Detects_Flat()
-    {
-        using var workspace = new TestWorkspace();
-        workspace.WriteText("a.jpg", "x");
-        workspace.WriteText("a.json", "{}");
-
-        DatasetProbe probe = await CreateProbe().DetectAsync(StorageLocation.FromPath(workspace.Root));
-
-        Assert.Equal(DatasetFormat.Flat, probe.Format);
     }
 
     [Fact]
