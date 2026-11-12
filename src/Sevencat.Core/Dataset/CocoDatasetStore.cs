@@ -1,4 +1,5 @@
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -117,7 +118,7 @@ public sealed class CocoDatasetStoreProvider(BlobStoreRegistry registry) : IData
 
         if (string.IsNullOrWhiteSpace(probe.DescriptorPath))
         {
-            throw new InvalidOperationException("COCO 数据集缺少 json 描述文件");
+            throw new InvalidOperationException(Text.Get("Error.CocoDescriptorMissing"));
         }
 
         IBlobStore store = registry.Get(probe.Root);

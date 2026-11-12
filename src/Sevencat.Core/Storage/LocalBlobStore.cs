@@ -1,3 +1,5 @@
+using Sevencat.Core.Localization;
+
 namespace Sevencat.Core.Storage;
 
 /// <summary>
@@ -98,7 +100,7 @@ public sealed class LocalBlobStore(StorageLocation location) : IBlobStore
         if (!full.StartsWith(Root, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(full, Root, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"路径越界：{relativePath}");
+            throw new InvalidOperationException(Text.Format("Error.PathOutsideRoot", relativePath));
         }
 
         return full;

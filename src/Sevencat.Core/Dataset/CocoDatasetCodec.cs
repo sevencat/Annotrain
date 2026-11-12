@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Dataset;
@@ -23,7 +24,7 @@ public sealed class CocoDatasetCodec : IDatasetAnnotationCodec
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            throw new InvalidDataException("COCO 标注文件为空");
+            throw new InvalidDataException(Text.Get("Error.CocoFileEmpty"));
         }
 
         CocoFileDto? dto;
@@ -33,12 +34,12 @@ public sealed class CocoDatasetCodec : IDatasetAnnotationCodec
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException("COCO 标注文件不是合法 JSON", ex);
+            throw new InvalidDataException(Text.Get("Error.CocoInvalidJson"), ex);
         }
 
         if (dto is null)
         {
-            throw new InvalidDataException("COCO 标注文件内容为 null");
+            throw new InvalidDataException(Text.Get("Error.CocoFileNull"));
         }
 
         var warnings = new List<string>();

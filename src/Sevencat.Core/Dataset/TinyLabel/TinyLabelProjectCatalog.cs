@@ -1,18 +1,30 @@
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset.TinyLabel;
 
-/// <summary>左侧项目列表用的一行：项目基本信息 + 图数 / 已标数 / split。</summary>
+/// <summary>左侧项目列表用的一行：项目基本信息 + 图数 / 已标数 / 待处理数 / split / 归档状态。</summary>
 public sealed record TinyLabelProjectSummary(
     long Id,
     string Name,
     string Description,
     int ImageCount,
     int LabeledCount,
+    int PendingCount,
+    DateTime CreatedAt,
+    DateTime? ClosedAt,
     IReadOnlyList<string> Splits)
 {
+    /// <summary>已结束（归档）的项目在列表里沉到下方。</summary>
+    public bool IsClosed => ClosedAt is not null;
+
     public double Progress => ImageCount == 0 ? 0 : (double)LabeledCount / ImageCount;
+
+    /// <summary>「图片 14 张 · 已处理 9 张 · 待处理 5 张」。</summary>
+    public string Stats => $"图片 {ImageCount} 张 · 已处理 {LabeledCount} 张 · 待处理 {PendingCount} 张";
+
+    public string CreatedText => CreatedAt.ToLocalTime().ToString("yyyy-MM-dd");
 
     public string Summary => $"{ImageCount} 张 · 已标 {LabeledCount}";
 }
@@ -36,7 +48,7 @@ public sealed class TinyLabelProjectCatalog(
 
         if (!root.IsFile)
         {
-            throw new NotSupportedException("数据库形态只支持本地目录：SQLite 的 WAL 需要本地随机写");
+            throw new NotSupportedException(Text.Get("Error.DatabaseRequiresLocalFolder"));
         }
 
         IBlobStore store = registry.Get(root);
@@ -55,7 +67,6 @@ public sealed class TinyLabelProjectCatalog(
             .ToList();
 
         List<ImageEntity> images = database.Orm.Select<ImageEntity>().ToList();
-        HashSet<long> annotated = [.. database.Orm.Select<AnnotationEntity>().ToList(image => image.ImageId)];
 
         Dictionary<long, List<ImageEntity>> byProject = images
             .GroupBy(image => image.ProjectId)
@@ -75,14 +86,29 @@ public sealed class TinyLabelProjectCatalog(
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(split => split, StringComparer.OrdinalIgnoreCase)];
 
+            // 已处理 = 有任何标注状态的图（不含 pending）；待处理 = 还没标的。
+            int labeled = own.Count(image => !string.Equals(image.State, "pending", StringComparison.OrdinalIgnoreCase));
+            int pending = own.Count - labeled;
+
             result.Add(new TinyLabelProjectSummary(
                 project.Id,
                 project.Name,
                 project.Description,
                 own.Count,
-                own.Count(image => annotated.Contains(image.Id)),
+                labeled,
+                pending,
+                project.CreatedAt,
+                project.ClosedAt,
                 splits));
         }
+
+        // 未结束优先，其次按创建时间倒序（与服务端列表一致）
+        result.Sort((left, right) =>
+        {
+            int closed = left.IsClosed.CompareTo(right.IsClosed);
+
+            return closed != 0 ? closed : right.CreatedAt.CompareTo(left.CreatedAt);
+        });
 
         logger?.LogInformation("数据目录 {Root} 有 {Count} 个项目", root, result.Count);
 

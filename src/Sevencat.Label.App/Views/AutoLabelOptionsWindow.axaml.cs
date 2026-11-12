@@ -2,12 +2,15 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Sevencat.Core.AutoLabel;
+using Sevencat.Core.Localization;
 
 namespace Sevencat.Label.App.Views;
 
 /// <summary>AI 标注设置：只收模型路径与置信度，推理参数在标注窗口里用。</summary>
 public partial class AutoLabelOptionsWindow : Window
 {
+    private static Localizer Loc => Localizer.Instance;
+
     public AutoLabelOptionsWindow() => InitializeComponent();
 
     public AutoLabelOptionsWindow(string? modelPath, double confidence) : this()
@@ -29,11 +32,11 @@ public partial class AutoLabelOptionsWindow : Window
 
         IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "选择 ONNX 模型",
+            Title = Loc.Get("AutoLabel.PickTitle"),
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("ONNX 模型") { Patterns = ["*.onnx"] },
+                new FilePickerFileType(Loc.Get("AutoLabel.FileType")) { Patterns = ["*.onnx"] },
             ],
         });
 
@@ -50,13 +53,13 @@ public partial class AutoLabelOptionsWindow : Window
 
         if (path.Length == 0)
         {
-            ErrorText.Text = "请选择 .onnx 模型文件";
+            ErrorText.Text = Loc.Get("AutoLabel.NeedModel");
             return;
         }
 
         if (!path.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
         {
-            ErrorText.Text = "只支持 .onnx 模型";
+            ErrorText.Text = Loc.Get("AutoLabel.OnnxOnly");
             return;
         }
 

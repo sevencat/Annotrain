@@ -5,7 +5,9 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Sevencat.Core.Annotation;
 using Sevencat.Core.AutoLabel;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 using Sevencat.Label.App.Controls;
@@ -21,11 +23,14 @@ public partial class AnnotationWindow : Window
 {
     private readonly DatabaseAnnotationStore _store;
     private readonly IBlobStore _blobStore;
-    private readonly ProjectImage _projectImage;
     private readonly ImageRef _image;
-    private readonly IReadOnlyList<string> _classes;
+    private IReadOnlyList<string> _classes = [];
     private readonly AppSettings _settings;
     private readonly SettingsStore _settingsStore;
+
+    private string _displayName = string.Empty;
+    private readonly int _imageWidth;
+    private readonly int _imageHeight;
 
     private Bitmap? _bitmap;
     private IAutoLabelRunner? _runner;
@@ -38,17 +43,17 @@ public partial class AnnotationWindow : Window
 
         _store = null!;
         _blobStore = null!;
-        _projectImage = null!;
         _image = null!;
         _classes = [];
         _settings = new AppSettings();
         _settingsStore = null!;
     }
 
+    /// <summary>从图片清单的一行打开（主界面用）。</summary>
     public AnnotationWindow(
         string databasePath,
         long projectId,
-        ProjectImage image,
+        TinyLabelImageRow row,
         IReadOnlyList<string> classes,
         IBlobStore blobStore,
         AppSettings settings,
@@ -56,13 +61,28 @@ public partial class AnnotationWindow : Window
     {
         _store = new DatabaseAnnotationStore(databasePath, projectId);
         _blobStore = blobStore;
-        _projectImage = image;
-        _image = image.Sample.Image;
-        _classes = classes;
         _settings = settings;
         _settingsStore = settingsStore;
 
-        FileText.Text = image.FileName;
+        string? directory = Path.GetDirectoryName(row.FilePath);
+        _image = new ImageRef(
+            Path.GetFileName(row.FilePath),
+            StorageLocation.FromPath(string.IsNullOrEmpty(directory) ? "." : directory));
+
+        _displayName = row.FileName;
+        _imageWidth = row.Width;
+        _imageHeight = row.Height;
+
+        Configure(classes);
+    }
+
+    private void Configure(IReadOnlyList<string> classes)
+    {
+        _classes = classes;
+
+        FileText.Text = _displayName;
+        Title = Localizer.Instance.Get("Annotate.Title");
+        AcceptConfidentButton.Content = Localizer.Instance.Format("Annotate.AcceptConfident", 0.5);
 
         string[] labels = classes.Count > 0 ? [.. classes] : ["object"];
         LabelBox.ItemsSource = labels;
@@ -104,18 +124,25 @@ public partial class AnnotationWindow : Window
         }
         catch (Exception error)
         {
-            HintText.Text = $"加载失败：{error.Message}";
+            HintText.Text = Localizer.Instance.Format("Annotate.LoadFailed", error.Message);
         }
     }
 
     private void UpdateHint()
     {
+        Localizer loc = Localizer.Instance;
+
         string model = string.IsNullOrWhiteSpace(_settings.AutoLabelModelPath)
-            ? "未设置 AI 模型"
+            ? loc.Get("Annotate.NoModel")
             : Path.GetFileName(_settings.AutoLabelModelPath);
 
-        HintText.Text = $"{_image.RelativePath} · {_projectImage.Sample.Width}×{_projectImage.Sample.Height} · " +
-                        $"{Board.Shapes.Count} 个框 · 左键拖拽画框，选中后 Delete 删除 · AI 模型：{model}";
+        HintText.Text = loc.Format(
+            "Annotate.Hint",
+            _displayName,
+            _imageWidth,
+            _imageHeight,
+            Board.Shapes.Count,
+            model);
     }
 
     // ── 工具 ──────────────────────────────────────────────────────────────────
@@ -140,7 +167,7 @@ public partial class AnnotationWindow : Window
     {
         if (!Board.DeleteSelected())
         {
-            HintText.Text = "先点选一个框，再删除";
+            HintText.Text = Localizer.Instance.Get("Annotate.DeleteHint");
         }
     }
 
@@ -171,11 +198,11 @@ public partial class AnnotationWindow : Window
 
         if (string.IsNullOrWhiteSpace(_settings.AutoLabelModelPath))
         {
-            HintText.Text = "先点「AI 设置」选一个 .onnx 模型";
+            HintText.Text = Localizer.Instance.Get("Annotate.AINoModel");
             return;
         }
 
-        HintText.Text = "AI 推理中…";
+        HintText.Text = Localizer.Instance.Get("Annotate.AIRunning");
 
         try
         {
@@ -192,11 +219,11 @@ public partial class AnnotationWindow : Window
 
             Board.SetCandidates(candidates);
             CandidateBar.IsVisible = candidates.Count > 0;
-            CandidateText.Text = $"AI 候选 {candidates.Count} 个";
+            CandidateText.Text = Localizer.Instance.Format("Annotate.Candidates", candidates.Count);
 
-            HintText.Text = candidates.Count == 0
-                ? "没有候选：调低置信度再试，或确认模型类别与项目类别一致"
-                : "候选是黄色虚线框，确认后点「接受全部」或「只接受 ≥0.5」";
+            HintText.Text = Localizer.Instance.Get(candidates.Count == 0
+                ? "Annotate.NoCandidatesHint"
+                : "Annotate.CandidateHint");
         }
         catch (Exception error)
         {
@@ -204,7 +231,7 @@ public partial class AnnotationWindow : Window
             _runner = null;
             _runnerModel = string.Empty;
             CandidateBar.IsVisible = false;
-            HintText.Text = $"AI 标注失败：{error.Message}";
+            HintText.Text = Localizer.Instance.Format("Annotate.AIFailed", error.Message);
         }
     }
 
@@ -218,7 +245,7 @@ public partial class AnnotationWindow : Window
 
         CandidateBar.IsVisible = false;
         UpdateHint();
-        HintText.Text = $"接受 {accepted} 个 AI 框，记得保存";
+        HintText.Text = Localizer.Instance.Format("Annotate.Accepted", accepted);
     }
 
     private void OnDiscardCandidates(object? sender, RoutedEventArgs e)
@@ -249,7 +276,7 @@ public partial class AnnotationWindow : Window
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            HintText.Text = $"设置保存失败：{error.Message}";
+            HintText.Text = Localizer.Instance.Format("Annotate.SettingsSaveFailed", error.Message);
         }
     }
 
@@ -301,8 +328,8 @@ public partial class AnnotationWindow : Window
             var document = new AnnotationDocument
             {
                 ImagePath = _image.RelativePath,
-                ImageWidth = _projectImage.Sample.Width,
-                ImageHeight = _projectImage.Sample.Height,
+                ImageWidth = _imageWidth,
+                ImageHeight = _imageHeight,
                 Shapes = Board.Shapes,
                 Meta = new DocumentMeta
                 {
@@ -317,7 +344,7 @@ public partial class AnnotationWindow : Window
         }
         catch (Exception error)
         {
-            HintText.Text = $"保存失败：{error.Message}";
+            HintText.Text = Localizer.Instance.Format("Annotate.SaveFailed", error.Message);
             return false;
         }
     }

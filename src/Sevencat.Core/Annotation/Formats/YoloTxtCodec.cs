@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Annotation.Formats;
@@ -107,7 +108,7 @@ public sealed class YoloTxtCodec : IAnnotationCodec
     {
         if (context.ImageWidth <= 0 || context.ImageHeight <= 0)
         {
-            throw new InvalidOperationException("图片尺寸未知，无法写 YOLO 标签");
+            throw new InvalidOperationException(Text.Get("Error.ImageSizeUnknown"));
         }
 
         using var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, leaveOpen: true) { NewLine = "\n" };

@@ -40,10 +40,16 @@
 | S-11 | M1 | 反向导入：现有 YOLO / RF-DETR 数据集 → 标注项目（图片 + 标注 + train/val） | 完成 | `DatasetImportService`（Core）；标注端 `LabelDatasetImportService` + `--import` CLI + 主窗口导入面板 |
 | S-12 | M1 | 项目管理 + 项目明细：左栏项目列表、右栏图片表格 | 完成 | `TinyLabelProjectCatalog` 列项目与统计；`LabelProjectBrowser` 按项目 Id 装载明细；导入目标固定为当前数据目录 |
 | S-13 | M2 | 单图标注对话框（画布 + 保存） | 完成 | `AnnotationCanvas`（矩形/选中/拖动/删除/缩放/适应窗口）+ `AnnotationWindow`；保存走 `DatabaseAnnotationStore`（乐观锁） |
-| S-14 | M1 | 新建项目（空项目落到当前数据目录） | 完成 | `TinyLabelProjectService`（Core）+ `ProjectEditorWindow`；只有名称与备注，不复制图片 |
+| S-14 | M1 | 新建项目（库里插一行，不建库） | 完成 | `TinyLabelProjectService.CreateAsync` 走 `TinyLabelWorkspace.RequireDatabase`：缺库直接报错；无库时界面先确认「新建数据库」再建项目 |
 | S-15 | M2 | AI 标注：ONNX(YOLO) 推理 + 候选确认 | 完成 | `YoloOnnxRunner` / `YoloOutputDecoder`（Core，letterbox + NMS + 类别映射）+ `AutoLabelOptionsWindow`；候选虚线显示，接受全部 / ≥0.5 / 丢弃 |
-| L-1 | M2 | 画布迁移（AnnotationCanvas/LabelPalette） | 进行中 | 已落自写精简版（矩形 / 选中 / 拖动 / 删除 / 缩放）；未接 ImageFacade |
-| L-2 | M2 | 主窗口 VM 与视图迁移 | 进行中 | 左项目管理 / 右项目明细 + 标注对话框已通；导出与设置页未做 |
+| S-16 | M2 | 项目编辑 / 删除 / 结束（归档） | 完成 | `TinyLabelProjectService.UpdateAsync/DeleteAsync/SetClosedAsync`；项目列表按「未结束优先 + 创建时间倒序」 |
+| S-17 | M2 | 图片清单升级：分页 + 状态 / 版本 / 备注列 | 完成 | `TinyLabelImageService.QueryAsync`（每页 50 张）+ 运行时表格；保存标注自动置 `labeled` |
+| S-18 | M2 | 图片入库：导入图片 / 导入文件夹 / 扫描目录 | 完成 | `TinyLabelImageService.ImportFilesAsync/ImportFolderAsync`（sha256 去重、复制或只登记） |
+| S-19 | M2 | 类别管理（追加 / 改名 / 受保护的删除） | 完成 | `TinyLabelClassService` + `ClassEditorWindow`；`OrderIndex` 即 YOLO classId，不重排 |
+| S-20 | M2 | 数据根目录与配置入库 | 完成 | `AppDataPaths`（`exe/data`，`--data` 覆盖）+ `SettingsStore` 改存 `data/settings.db`（迁移旧 JSON） |
+| S-21 | M2 | 多语言（中文 / English） | 完成 | `Localizer`（Core，双字典 + 索引器通知）+ 两端 `LocExtension`；右上角下拉切换，语言存 `settings.db`；Core 异常消息与数据集形态名也走同一张表（`Text.Get/Format`） |
+| L-1 | M2 | 画布迁移（AnnotationCanvas/LabelPalette） | 进行中 | 已落自写精简版（矩形 / 选中 / 拖动 / 删除 / 缩放）；未接 ImageFacade，多边形/圆/线待补 |
+| L-2 | M2 | 主窗口 VM 与视图迁移 | 进行中 | 按 TinyLabel 服务端首页重排：左项目管理 + 右概览/工具栏/表格/分页；缩略图与设置页未做 |
 | L-3 | M2 | 撤销重做 + 原子保存 | 未开始 | 保存已走 `DatabaseAnnotationStore` 乐观锁，撤销未做 |
 | L-4 | M2 | 数据集浏览器（虚拟化+缩略图） | 进行中 | 项目列表 + 图片表格已通；虚拟化 / 缩略图未做 |
 | W-1 | M3 | ServerHost 类库化 | 未开始 | 由 Label.Avalonia 启动 |
@@ -103,4 +109,8 @@
 | 2026-11-12 | 补齐标注端缺的功能：新建空项目（`TinyLabelProjectService` + `ProjectEditorWindow`）、标注窗口「保存并继续」自动领下一张待标注图、AI 标注（`Microsoft.ML.OnnxRuntime` 加载 YOLO `.onnx`，letterbox → 解码 → NMS → 类别映射，候选以黄色虚线显示，接受全部 / ≥0.5 / 丢弃）；模型路径与置信度写入 `AppSettings`，启动自动回到上次数据目录 | 对齐 TinyLabel 的「AI 方案设置 + AI 预标注 + 候选确认」；`YoloOutputDecoder` 5 个单测覆盖坐标反变换、阈值、同类别 NMS、类别映射、转置输出；实测 4 图项目打开标注窗口稳定 |
 | 2026-11-12 | 标注端改为「左项目管理 / 右项目明细」两栏：`TinyLabelProjectCatalog` 直接读库列出项目（图数 / 已标数 / split），`LabelProjectBrowser` 按项目 Id 装载；右侧图片表格每行带「标注」按钮，顶部「开始标注」作用于选中行；新增自写精简画布 `AnnotationCanvas`（矩形 / 选中 / 拖动 / 删除 / 滚轮缩放 / 适应窗口）与 `AnnotationWindow` 标注对话框，保存走 `DatabaseAnnotationStore` | 交互对齐 TinyLabel 的「列表 → 点进一张 → 标完关闭」；导入按钮改为弹窗，目标固定当前数据目录；新增 `--annotate <数据目录>` 直接进首图标注；实测 4 图项目打开标注窗口进程稳定、画布渲染正常 |
 | 2026-11-12 | 标注端补上「打开项目 + 浏览」：`LabelProjectBrowser` 用 `DatasetStoreResolver` 打开 tinylabel 后一次性装载图片清单即关库（`ImageRef` 保留，字节按需读），界面左侧按 split 列图、右侧预览并用 `Viewbox + Canvas` 按原图像素坐标叠框；导入完成后自动打开目标项目并选中第一张 | 新增 `--open <项目目录>` 直接进项目；VM 的 `SelectedImage` 统一驱动预览（用户点击与程序预设同一路径）；实测打开导入项目：train 5 / val 1，首图 320×240 / 2 框，位图解码成功 |
+| 2026-11-12 | 澄清「新建」语义 + 多语言：`TinyLabelWorkspace` 区分数据目录初始化与新建项目（`CreateAsync` 不再建库，缺库抛错；打开目录也不建库，无库时点新建先弹「新建数据库」确认）；新增 `Localizer`（中英双字典、索引器通知、语言存 `settings.db`）+ 两端 `LocExtension`，标注端全部界面文案（主窗/项目/导入/导出/类别/标注/AI 设置）与训练端工具栏/状态切到本地化 | UI 自动化实测：切换到 English 后整屏英文（`Annotrain Labeler` / `Open data folder…` / `No annotrain.db in this folder…`），切回中文正常；无库目录启动后 `annotrain.db` 不生成，点「新建项目」弹出「新建数据库」确认，确认后建库并进入项目对话框；新增本地化完整性与「新建不建库」测试，Label 测试 54/54 通过 |
+| 2026-11-12 | 标注主界面按 TinyLabel 服务端首页重排（左项目管理 / 右项目概览 + 图片清单 + 分页），工具栏顺序为 导入图片… → 导入数据集… → 导入文件夹… → 扫描目录… → 导出数据集… → 打开目录 → 类别管理；补齐后端：项目 编辑/删除/结束、图片分页查询与状态/版本/备注、导入图片/文件夹/扫描目录（sha256 去重）、类别追加/改名/受保护删除；保存标注自动置 `labeled` | 数据根目录改为 `exe/data`（`--data` 可覆盖），配置从 JSON 迁到 `data/settings.db`（启动自动迁移旧配置），日志移到 `data/logs`；UI 自动化实测：新建项目 → 列表出现；导入 YOLO 数据集 → 表格 3 行（路径/已标注/已标注/rev 1/—）+ 分页「第 1 页 / 共 1 页」+ 底部库路径；Label 测试 51/51、Train 测试 3/3 通过 |
+| 2026-11-12 | 修「新建」不生效：根因是未打开数据目录时 `OnCreateProject` 只写一行不显眼的状态就返回（标注端上次数据目录又被训练端覆盖导致启动后没有工作区）。改为「新建/导入」先就地选目录并打开再继续；`OpenLastWorkspaceAsync` 对目录不存在给出明确提示；`AppSettings` 拆出 `LastTrainDataDirectory`，训练端不再覆盖标注端的 `LastDataDirectory` | UI 自动化实测：有工作区时新建 → 对话框 → 创建 → 列表出现并选中新项目（同一工作区连续新建 2 个均正常）；无工作区时点击新建 → 弹出目录选择；新增 `ProjectCreateTests` 覆盖「建库 → 探测 → 浏览器打开」数据链路，Label 测试 49/49 通过 |
 | 2026-11-12 | 训练引擎落地：OmniTensorSharp 的 Core/Data/NN/Models/IO/Export/Training/Train.App 训练会话共 97 个文件复制到 `Sevencat.Train.Engine`（`Core|Data|NN|Models|IO|Export|Training|Sessions`），命名空间统一为 `Sevencat.Train.Engine.*`；新增 `YoloDatasetTrainingRunner` 把 `IDatasetStore` 样本 → 归一化标签 → 批次 → 训练循环，图片字节走 `IBlobStore.OpenReadAsync`，产出 best/model/model-ema/optimizer.bin/train.json；图像后端统一由 exe 入口注册（`ImageRuntime.Use(new SkiaBackend())`），引擎只依赖 ImageFacade 抽象、不引任何编解码实现 | 训练程序 `AddAnnotrainTrainingEngine()` 替换干跑实现；工具栏 epochs/batch/imgsz 生效，`TrainingProgress` 驱动曲线、日志回填面板；新增 1 个真训练冒烟测试（4 图 / 1 epoch / 64px，约 1s 通过），测试进程同样注册 SkiaSharp |
+| 2026-11-12 | Core 抛错文案接多语言：新增 `Text`（`Localizer` 门面，`Get` / `Format`）与 47 条 `Error.*`、5 条 `Dataset.Format.*` 文案；25 个 Core 文件的 56 处中文异常消息（存储越界/后端未注册、模型缺失、标注与 COCO codec、TinyLabel 工作区/项目/图片/类别/库、导入导出、数据集探测歧义与不支持的形态）改为查表；项目名与类别名的校验文案复用界面的 `Project.NameRequired/NameTooLong`、`Classes.NameRequired`（后者统一为「类别名不能为空」） | 英文界面里「导入失败：{0}」「打开数据集失败：{0}」不会再夹半句中文；新增 `ExceptionMessages_FollowCurrentLanguage` 用例，Label 测试 55/55、Train 测试 3/3 通过；仍未本地化的只剩日志模板、导入/导出 `Summary` 与探测结论文案 |

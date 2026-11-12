@@ -1,10 +1,15 @@
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset.TinyLabel;
 
 /// <summary>
-/// 项目级写操作：新建项目。库不存在时自动建库建表，界面上「新建项目」直接落到当前数据目录。
+/// 项目级写操作：新建 / 编辑 / 结束（归档）/ 重开 / 删除。
+/// <para>
+/// 「新建项目」只往当前数据目录**已有的** <c>annotrain.db</c> 里插一行，
+/// 不会创建数据库；数据目录本身由 <see cref="TinyLabelWorkspace.EnsureDatabase"/> 在打开目录时初始化。
+/// </para>
 /// </summary>
 public sealed class TinyLabelProjectService(
     ILogger<TinyLabelProjectService>? logger = null)
@@ -21,27 +26,10 @@ public sealed class TinyLabelProjectService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        if (!root.IsFile)
-        {
-            throw new NotSupportedException("数据库形态只支持本地目录：SQLite 的 WAL 需要本地随机写");
-        }
+        string trimmed = ValidateName(name);
+        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
 
-        string trimmed = (name ?? string.Empty).Trim();
-
-        if (trimmed.Length == 0)
-        {
-            throw new ArgumentException("项目名不能为空", nameof(name));
-        }
-
-        if (trimmed.Length > MaxNameLength)
-        {
-            throw new ArgumentException($"项目名不能超过 {MaxNameLength} 个字符", nameof(name));
-        }
-
-        Directory.CreateDirectory(root.Root);
-        string databasePath = Path.Combine(root.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
-
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath);
+        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
 
         long projectId = (long)database.Orm.Insert(new ProjectEntity
         {
@@ -55,5 +43,120 @@ public sealed class TinyLabelProjectService(
         logger?.LogInformation("新建项目 {Name}（Id={Id}）于 {Root}", trimmed, projectId, root);
 
         return Task.FromResult(projectId);
+    }
+
+    /// <summary>改项目名与备注；不动图片、不动类别索引。</summary>
+    public Task UpdateAsync(
+        StorageLocation root,
+        long projectId,
+        string name,
+        string? description = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ct.ThrowIfCancellationRequested();
+
+        string trimmed = ValidateName(name);
+        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+
+        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+
+        int affected = database.Orm.Update<ProjectEntity>()
+            .Where(project => project.Id == projectId)
+            .Set(project => project.Name, trimmed)
+            .Set(project => project.Description, description?.Trim() ?? string.Empty)
+            .ExecuteAffrows();
+
+        if (affected == 0)
+        {
+            throw new InvalidOperationException(Text.Format("Error.ProjectNotFound", projectId));
+        }
+
+        logger?.LogInformation("编辑项目 {Id}：{Name}", projectId, trimmed);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>结束（归档）/ 重新打开项目：只动 <c>ClosedAt</c>，图片与标注都不动。</summary>
+    public Task SetClosedAsync(
+        StorageLocation root,
+        long projectId,
+        bool closed,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ct.ThrowIfCancellationRequested();
+
+        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+
+        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+
+        int affected = database.Orm.Update<ProjectEntity>()
+            .Where(project => project.Id == projectId)
+            .Set(project => project.ClosedAt, closed ? DateTime.UtcNow : null)
+            .ExecuteAffrows();
+
+        if (affected == 0)
+        {
+            throw new InvalidOperationException(Text.Format("Error.ProjectNotFound", projectId));
+        }
+
+        logger?.LogInformation("{Action}项目 {Id}", closed ? "结束" : "重新打开", projectId);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 删除项目：项目行 + 图片行 + 标注行 + 类别行一起清掉；
+    /// <paramref name="deleteImages"/> 为 true 时再删 <c>projects/{Id}/</c> 目录（扫描模式的原图不动）。
+    /// </summary>
+    public Task DeleteAsync(
+        StorageLocation root,
+        long projectId,
+        bool deleteImages = true,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ct.ThrowIfCancellationRequested();
+
+        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+
+        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+
+        database.Orm.Delete<AnnotationEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        database.Orm.Delete<ImageEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        database.Orm.Delete<ProjectClassEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
+        database.Orm.Delete<ProjectEntity>().Where(row => row.Id == projectId).ExecuteAffrows();
+
+        if (deleteImages)
+        {
+            string folder = Path.Combine(root.Root, "projects", projectId.ToString());
+
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+
+        logger?.LogWarning("已删除项目 {Id}（含图片与标注，删图片目录={DeleteImages}）", projectId, deleteImages);
+
+        return Task.CompletedTask;
+    }
+
+    private static string ValidateName(string? name)
+    {
+        string trimmed = (name ?? string.Empty).Trim();
+
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException(Text.Get("Project.NameRequired"), nameof(name));
+        }
+
+        if (trimmed.Length > MaxNameLength)
+        {
+            throw new ArgumentException(Text.Format("Project.NameTooLong", MaxNameLength), nameof(name));
+        }
+
+        return trimmed;
     }
 }

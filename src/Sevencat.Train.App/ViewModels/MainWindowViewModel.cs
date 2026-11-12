@@ -6,6 +6,7 @@ using Sevencat.Core;
 using Sevencat.Core.Dataset;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Infrastructure.Logging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Simulation;
 using Sevencat.Core.Storage;
 
@@ -27,19 +28,23 @@ public partial class MainWindowViewModel : ObservableObject
     private CancellationTokenSource? _training;
 
     [ObservableProperty]
-    private string _title = $"{AnnotrainInfo.ProductName} · 训练";
+    private string _title = Localizer.Instance.Get("Train.Title");
 
     [ObservableProperty]
-    private string _status = "就绪";
+    private string _status = Localizer.Instance.Get("Train.Ready");
 
     [ObservableProperty]
     private string _logText = string.Empty;
+
+    /// <summary>当前界面语言；切换后写入设置。</summary>
+    [ObservableProperty]
+    private LanguageOption? _selectedLanguage;
 
     [ObservableProperty]
     private string _datasetPath = string.Empty;
 
     [ObservableProperty]
-    private string _datasetSummary = "未选择数据集";
+    private string _datasetSummary = Localizer.Instance.Get("Train.NoDataset");
 
     [ObservableProperty]
     private string _datasetStats = string.Empty;
@@ -54,7 +59,7 @@ public partial class MainWindowViewModel : ObservableObject
     private decimal _imageSize = 640;
 
     [ObservableProperty]
-    private string _outputDirectory = Path.Combine(AppPaths.ConfigDirectory, "runs");
+    private string _outputDirectory = Path.Combine(AppDataPaths.DataDirectory, "runs");
 
     [ObservableProperty]
     private bool _isTraining;
@@ -74,6 +79,11 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>当前打开的数据集是否可用于训练。</summary>
     public bool HasDataset => _store is not null;
 
+    /// <summary>语言下拉的候选。</summary>
+    public IReadOnlyList<LanguageOption> Languages => Localizer.Supported;
+
+    private static Localizer Loc => Localizer.Instance;
+
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
         LogBuffer logBuffer,
@@ -88,14 +98,40 @@ public partial class MainWindowViewModel : ObservableObject
         _settings = settings;
         _settingsStore = settingsStore;
 
-        if (!string.IsNullOrWhiteSpace(settings.LastDataDirectory))
+        _selectedLanguage = Localizer.Supported.FirstOrDefault(option => option.Code == Loc.Language);
+
+        if (!string.IsNullOrWhiteSpace(settings.LastTrainDataDirectory))
         {
-            OutputDirectory = Path.Combine(settings.LastDataDirectory, "runs");
+            OutputDirectory = Path.Combine(settings.LastTrainDataDirectory, "runs");
         }
 
         logger.LogInformation("训练主窗口已创建，等待选择数据集");
 
         LogText = string.Join(Environment.NewLine, logBuffer.Snapshot().Select(entry => entry.ToString()));
+    }
+
+    partial void OnSelectedLanguageChanged(LanguageOption? value)
+    {
+        if (value is null || string.Equals(value.Code, Loc.Language, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Loc.SetLanguage(value.Code);
+
+        _settings.Language = value.Code;
+        SaveSettings();
+
+        Title = Loc.Get("Train.Title");
+        Status = Loc.Get("Train.Ready");
+
+        if (_store is null)
+        {
+            DatasetSummary = Loc.Get("Train.NoDataset");
+        }
+
+        RunInfo = string.Empty;
+        OnPropertyChanged(nameof(ChartHint));
     }
 
     // ── 数据集 ────────────────────────────────────────────────────────────────
@@ -107,7 +143,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        Status = "正在打开数据集…";
+        Status = Localizer.Instance.Get("Train.Opening");
 
         try
         {
@@ -120,7 +156,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             DatasetPath = path;
             DatasetSummary = $"{opened.Store.Format.ToDisplayName()} · split {string.Join(" / ", opened.Store.Splits)} · " +
-                             $"{opened.Store.Classes.Count} 类";
+                             Localizer.Instance.Format("Train.Classes", opened.Store.Classes.Count);
 
             int images = 0;
             int boxes = 0;
@@ -137,17 +173,17 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             Classes = [.. opened.Store.Classes.Names];
-            DatasetStats = $"{images} 张图 / {boxes} 个框";
-            Status = $"已打开数据集：{DatasetStats}";
+            DatasetStats = Localizer.Instance.Format("Train.DatasetStats", images, boxes);
+            Status = Localizer.Instance.Format("Train.DatasetOpened", DatasetStats);
             OnPropertyChanged(nameof(HasDataset));
 
-            _settings.LastDataDirectory = Path.GetDirectoryName(path) ?? string.Empty;
+            _settings.LastTrainDataDirectory = Path.GetDirectoryName(path) ?? string.Empty;
             SaveSettings();
         }
         catch (Exception error)
         {
             _logger.LogError(error, "打开数据集失败");
-            Status = $"打开数据集失败：{error.Message}";
+            Status = Localizer.Instance.Format("Train.OpenFailed", error.Message);
             AppendLog(Status);
         }
     }
@@ -158,7 +194,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (IsTraining || _store is null)
         {
-            Status = _store is null ? "先选择数据集" : "训练已在进行";
+            Status = Localizer.Instance.Get(_store is null ? "Train.NeedDataset" : "Train.AlreadyRunning");
             return;
         }
 
@@ -168,8 +204,8 @@ public partial class MainWindowViewModel : ObservableObject
         Points.Clear();
         RunInfo = $"epochs {Epochs:0} · batch {BatchSize:0} · imgsz {ImageSize:0}";
 
-        Status = "训练中…";
-        AppendLog($"开始训练：{DatasetPath}");
+        Status = Localizer.Instance.Get("Train.Training");
+        AppendLog(Localizer.Instance.Format("Train.Started", DatasetPath));
 
         // 进度与日志回调都在训练线程上触发：Progress<T> 会回到创建它的 UI 线程。
         var progress = new Progress<TrainingProgress>(item =>
@@ -206,18 +242,18 @@ public partial class MainWindowViewModel : ObservableObject
                 AppendLog($"  ! {warning}");
             }
 
-            _settings.LastDataDirectory = Path.GetDirectoryName(DatasetPath) ?? _settings.LastDataDirectory;
+            _settings.LastTrainDataDirectory = Path.GetDirectoryName(DatasetPath) ?? _settings.LastTrainDataDirectory;
             SaveSettings();
         }
         catch (OperationCanceledException)
         {
-            Status = "训练已停止";
+            Status = Localizer.Instance.Get("Train.Stopped");
             AppendLog(Status);
         }
         catch (Exception error)
         {
             _logger.LogError(error, "训练失败");
-            Status = $"训练失败：{error.Message}";
+            Status = Localizer.Instance.Format("Train.Failed", error.Message);
             AppendLog(Status);
         }
         finally
@@ -236,13 +272,13 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         _training.Cancel();
-        Status = "正在停止…";
+        Status = Localizer.Instance.Get("Train.Stopping");
     }
 
     /// <summary>图表控件用：提示文字随状态变化。</summary>
     public string ChartHint => IsTraining
-        ? "训练中：每个 epoch 结束后刷新 loss 与 mAP"
-        : "开始训练后显示 loss / mAP 曲线";
+        ? Localizer.Instance.Get("Train.ChartRunning")
+        : Localizer.Instance.Get("Train.ChartIdle");
 
     // ── 内部 ──────────────────────────────────────────────────────────────────
 

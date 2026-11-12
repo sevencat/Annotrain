@@ -1,6 +1,7 @@
 using System.Text;
 using Sevencat.Core.Annotation.Formats;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Annotation;
@@ -78,7 +79,7 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
         ArgumentNullException.ThrowIfNull(document);
 
         ImageEntity entity = _db.FindImage(_projectId, image)
-            ?? throw new InvalidOperationException($"数据库里没有这张图：{image.RelativePath}");
+            ?? throw new InvalidOperationException(Text.Format("Error.ImageNotInDatabase", image.RelativePath));
 
         int currentRevision = entity.Revision;
         if (expectedRevision is { } expected && currentRevision != 0 && expected != currentRevision)
@@ -111,6 +112,13 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
                 .Set(row => row.Revision, nextRevision)
                 .Set(row => row.UpdatedAt, now)
                 .Where(row => row.Id == entity.Id)
+                .ExecuteAffrows();
+
+            // 保存标注即视为"已标注"：列表里的状态列要跟着变，不能一直停在 pending。
+            // 已通过 / 已排除 / 已跳过 是人工状态，保存标注不回退它们。
+            _db.Orm.Update<ImageEntity>()
+                .Set(row => row.State, "labeled")
+                .Where(row => row.Id == entity.Id && row.State == "pending")
                 .ExecuteAffrows();
 
             int updated = _db.Orm.Update<AnnotationEntity>()

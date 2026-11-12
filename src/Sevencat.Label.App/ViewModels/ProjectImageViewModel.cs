@@ -1,28 +1,66 @@
-using Sevencat.Core.Dataset;
-using Sevencat.Label;
+using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Localization;
+using Sevencat.Core.Model;
+using Sevencat.Core.Storage;
 
 namespace Sevencat.Label.App.ViewModels;
 
-/// <summary>项目明细表格里的一行：split + 图片 + 框数。</summary>
-public sealed class ProjectImageViewModel(ProjectImage image)
+/// <summary>
+/// 右侧图片清单的一行：路径 / 标注 / 状态 / 版本 / 备注 / 操作。
+/// 数据直接来自库里的 <c>images</c> 行，不再经过 Data 层的样本装载。
+/// </summary>
+public sealed class ProjectImageViewModel(TinyLabelImageRow row)
 {
-    public ProjectImage Image { get; } = image;
+    private static Localizer Loc => Localizer.Instance;
 
-    public DatasetSample Sample => Image.Sample;
+    public TinyLabelImageRow Row { get; } = row;
 
-    public string Split => Image.Split;
+    public long Id => Row.Id;
 
-    public string FileName => Image.FileName;
+    /// <summary>路径列：项目内相对路径（扫描模式是相对扫描根）。</summary>
+    public string DisplayPath => Row.RelPath;
 
-    public string RelativePath => Sample.Image.RelativePath;
+    public string FileName => Row.FileName;
 
-    public int BoxCount => Image.BoxCount;
+    public string RelativePath => Row.RelPath;
 
-    /// <summary>表格「尺寸」列。</summary>
-    public string SizeText => $"{Sample.Width}×{Sample.Height}";
+    /// <summary>标注列：有标注显示「已标注」，否则「未标注」。</summary>
+    public string BoxText => Loc.Get(Row.State == "pending" ? "State.Pending" : "State.Labeled");
 
-    /// <summary>表格「标注」列。</summary>
-    public string BoxText => BoxCount == 0 ? "未标注" : $"{BoxCount} 框";
+    /// <summary>状态列：库里 <c>images.State</c> 的本地化名字。</summary>
+    public string StateText => Loc.Get(Row.State switch
+    {
+        "pending" => "State.Pending",
+        "labeled" => "State.Labeled",
+        "reviewed" => "State.Reviewed",
+        "excluded" => "State.Excluded",
+        "skipped" => "State.Skipped",
+        _ => "State.Pending",
+    });
 
-    public string Summary => $"{Split} · {Sample.Width}×{Sample.Height} · {BoxCount} 框";
+    public string RevisionText => $"rev {Row.Revision}";
+
+    public string RemarkText => string.IsNullOrWhiteSpace(Row.Remark) ? Loc.Get("State.Empty") : Row.Remark;
+
+    public string SplitText => string.IsNullOrWhiteSpace(Row.Split) ? Loc.Get("State.NoSplit") : Row.Split;
+
+    public string SizeText => Row.SizeText;
+
+    /// <summary>标注窗口用：图片引用（本地绝对路径 → 目录 + 文件名）。</summary>
+    public ImageRef Image
+    {
+        get
+        {
+            string? directory = Path.GetDirectoryName(Row.FilePath);
+
+            return new ImageRef(
+                Path.GetFileName(Row.FilePath),
+                StorageLocation.FromPath(string.IsNullOrEmpty(directory) ? "." : directory));
+        }
+    }
+
+    /// <summary>标注窗口用：尺寸（读不到时退回 0，保存时以库里的宽高为准）。</summary>
+    public int Width => Row.Width;
+
+    public int Height => Row.Height;
 }

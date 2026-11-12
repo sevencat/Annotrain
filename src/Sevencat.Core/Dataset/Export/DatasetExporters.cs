@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -41,7 +42,7 @@ internal sealed class DatasetExportWriter(BlobStoreRegistry registry, DatasetExp
                 Path.GetFullPath(exportOptions.Destination.Root).TrimEnd(Path.DirectorySeparatorChar),
                 StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("导出目标不能与源数据集根目录相同，请换一个目录");
+            throw new InvalidOperationException(Text.Get("Error.ExportTargetSameAsSource"));
         }
     }
 
@@ -121,7 +122,7 @@ public sealed class YoloDatasetExporter(BlobStoreRegistry registry) : IDatasetEx
         string[] splits = options.Splits is { Count: > 0 } ? [.. options.Splits] : [.. source.Splits];
         if (splits.Length == 0)
         {
-            throw new InvalidOperationException("源数据集没有可导出的 split（图片都没分配 train/val/test）");
+            throw new InvalidOperationException(Text.Get("Error.ExportNoSplit"));
         }
 
         var writer = new DatasetExportWriter(registry, options);
@@ -267,7 +268,7 @@ public sealed class CocoDatasetExporter(BlobStoreRegistry registry) : IDatasetEx
         string[] splits = options.Splits is { Count: > 0 } ? [.. options.Splits] : [.. source.Splits];
         if (splits.Length == 0)
         {
-            throw new InvalidOperationException("源数据集没有可导出的 split（图片都没分配 train/val/test）");
+            throw new InvalidOperationException(Text.Get("Error.ExportNoSplit"));
         }
 
         var writer = new DatasetExportWriter(registry, options);

@@ -1,3 +1,5 @@
+using Sevencat.Core.Localization;
+
 namespace Sevencat.Core.Storage;
 
 /// <summary>
@@ -51,7 +53,7 @@ public sealed class BlobStoreRegistry(IEnumerable<IBlobStoreFactory> factories)
             }
         }
 
-        throw new NotSupportedException($"未注册的存储后端：{location.Scheme}://");
+        throw new NotSupportedException(Text.Format("Error.StorageBackendUnknown", location.Scheme));
     }
 
     /// <summary>解析 URI 字符串并返回对应存储。</summary>

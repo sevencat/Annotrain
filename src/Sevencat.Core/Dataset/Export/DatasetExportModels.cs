@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset.Export;
@@ -66,7 +67,7 @@ public sealed class DatasetExportService(
         ArgumentNullException.ThrowIfNull(options);
 
         IDatasetExporter exporter = _exporters.FirstOrDefault(item => item.TargetFormat == options.TargetFormat)
-            ?? throw new NotSupportedException($"没有可用的导出器：{options.TargetFormat.ToDisplayName()}");
+            ?? throw new NotSupportedException(Text.Format("Error.NoExporter", options.TargetFormat.ToDisplayName()));
 
         DatasetExportReport report = await exporter.ExportAsync(source, options, ct).ConfigureAwait(false);
 

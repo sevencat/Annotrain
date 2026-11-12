@@ -17,7 +17,9 @@ public static class CoreServiceCollectionExtensions
 
         var buffer = new LogBuffer();
         services.AddSingleton(buffer);
-        services.AddSingleton(new SettingsStore(AppPaths.SettingsFile));
+
+        // 配置进数据库：data/settings.db（与项目库同目录，整个 data 目录可整体拷走）
+        services.AddSingleton(_ => new SettingsStore(AppDataPaths.SettingsDatabasePath));
         services.AddSingleton(provider => provider.GetRequiredService<SettingsStore>().Load());
 
         NLogSetup.Configure(buffer, AppPaths.LogDirectory, applicationName);

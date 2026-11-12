@@ -1,5 +1,6 @@
 using ImageFacade;
 using ImageFacade.Backends;
+using Sevencat.Core.Localization;
 
 namespace Sevencat.Core.Imaging;
 
@@ -30,5 +31,5 @@ public static class ImageRuntime
     }
 
     public static ImageEngine Engine => ImageEngine.Default
-        ?? throw new InvalidOperationException("尚未注册图像后端，请先调用 ImageRuntime.Use(...)");
+        ?? throw new InvalidOperationException(Text.Get("Error.ImageBackendMissing"));
 }

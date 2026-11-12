@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
+        x:Class="Sevencat.Label.App.Views.ClassEditorWindow"
+        Title="{l:Loc Classes.Title}"
+        Width="560" Height="520"
+        MinWidth="480" MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="20" RowSpacing="10">
+
+    <StackPanel Grid.Row="0" Spacing="4">
+      <TextBlock Text="{l:Loc Classes.Title}" FontSize="16" FontWeight="SemiBold" />
+      <TextBlock Text="{l:Loc Classes.Hint}" Opacity="0.6" FontSize="12" TextWrapping="Wrap" />
+      <TextBlock x:Name="CountText" Opacity="0.6" FontSize="12" />
+    </StackPanel>
+
+    <ListBox Grid.Row="1" x:Name="Items"
+             BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}" />
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+      <TextBox x:Name="NameBox" PlaceholderText="{l:Loc Classes.NamePlaceholder}" MaxLength="128" />
+      <Button Grid.Column="1" Content="{l:Loc Classes.Add}" Click="OnAdd" />
+      <Button Grid.Column="2" Content="{l:Loc Classes.Rename}" Click="OnRename" />
+      <Button Grid.Column="3" Content="{l:Loc Classes.Remove}" Click="OnRemove" />
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" RowSpacing="6">
+      <TextBlock x:Name="ErrorText" Foreground="#EF4444" FontSize="12"
+                 MinHeight="16" TextWrapping="Wrap" VerticalAlignment="Center" />
+      <Button Grid.Column="1" Content="{l:Loc Common.Close}" Click="OnClose" IsDefault="True" />
+    </Grid>
+  </Grid>
+
+</Window>

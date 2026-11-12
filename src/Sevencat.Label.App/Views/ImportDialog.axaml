@@ -1,40 +1,41 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
         x:Class="Sevencat.Label.App.Views.ImportDialog"
-        Title="导入数据集"
+        Title="{l:Loc Import.Title}"
         Width="560" SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
   <StackPanel Margin="20" Spacing="12">
-    <TextBlock Text="把现有的 YOLO / RF-DETR 数据集导入当前数据目录" FontSize="16" FontWeight="SemiBold" />
+    <TextBlock Text="{l:Loc Import.Header}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
     <TextBlock x:Name="TargetText" Opacity="0.6" FontSize="12" TextWrapping="Wrap" />
 
-    <TextBlock Text="源数据集目录" FontWeight="SemiBold" Margin="0,4,0,0" />
+    <TextBlock Text="{l:Loc Import.Source}" FontWeight="SemiBold" Margin="0,4,0,0" />
 
     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
       <TextBox Grid.Column="0" x:Name="SourceBox"
-               PlaceholderText="含 data.yaml 或 COCO json 的目录" />
-      <Button Grid.Column="1" Content="浏览…" Click="OnBrowse" />
+               PlaceholderText="{l:Loc Import.SourcePlaceholder}" />
+      <Button Grid.Column="1" Content="{l:Loc Common.Browse}" Click="OnBrowse" />
     </Grid>
 
-    <TextBlock Text="形态" FontWeight="SemiBold" Margin="0,4,0,0" />
+    <TextBlock Text="{l:Loc Import.Format}" FontWeight="SemiBold" Margin="0,4,0,0" />
 
     <ComboBox x:Name="FormatBox" SelectedIndex="0" HorizontalAlignment="Stretch">
-      <ComboBoxItem Content="自动识别" />
-      <ComboBoxItem Content="YOLO（data.yaml + images/labels）" />
-      <ComboBoxItem Content="RF-DETR / COCO（_annotations.coco.json）" />
+      <ComboBoxItem Content="{l:Loc Import.Auto}" />
+      <ComboBoxItem Content="{l:Loc Export.FormatYolo}" />
+      <ComboBoxItem Content="{l:Loc Export.FormatCoco}" />
     </ComboBox>
 
-    <TextBlock Text="项目名" FontWeight="SemiBold" Margin="0,4,0,0" />
+    <TextBlock Text="{l:Loc Import.ProjectName}" FontWeight="SemiBold" Margin="0,4,0,0" />
 
-    <TextBox x:Name="NameBox" PlaceholderText="留空取源目录名" />
+    <TextBox x:Name="NameBox" PlaceholderText="{l:Loc Import.NamePlaceholder}" />
 
     <TextBlock x:Name="HintText" Opacity="0.7" FontSize="12" TextWrapping="Wrap" MinHeight="18" />
 
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
-      <Button Content="取消" Click="OnCancel" IsCancel="True" />
-      <Button Content="导入" Click="OnConfirm" IsDefault="True" />
+      <Button Content="{l:Loc Common.Cancel}" Click="OnCancel" IsCancel="True" />
+      <Button Content="{l:Loc Import.Action}" Click="OnConfirm" IsDefault="True" />
     </StackPanel>
   </StackPanel>
 

@@ -1,4 +1,5 @@
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Dataset;
@@ -41,14 +42,14 @@ public static class DatasetFormats
         _ => DatasetFormat.Unknown,
     };
 
-    /// <summary>界面展示用。</summary>
+    /// <summary>界面展示用（跟随当前语言）。</summary>
     public static string ToDisplayName(this DatasetFormat format) => format switch
     {
-        DatasetFormat.Yolo => "YOLO 布局",
-        DatasetFormat.Coco => "RF-DETR (COCO)",
-        DatasetFormat.TinyLabelDb => "图片目录 + 数据库",
-        DatasetFormat.Ambiguous => "多种格式",
-        _ => "未识别",
+        DatasetFormat.Yolo => Text.Get("Dataset.Format.Yolo"),
+        DatasetFormat.Coco => Text.Get("Dataset.Format.Coco"),
+        DatasetFormat.TinyLabelDb => Text.Get("Dataset.Format.TinyLabelDb"),
+        DatasetFormat.Ambiguous => Text.Get("Dataset.Format.Ambiguous"),
+        _ => Text.Get("Dataset.Format.Unknown"),
     };
 }
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Dataset;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -109,7 +110,7 @@ public sealed class SummaryTrainingRunner(
         string[] splits = options.Splits is { Count: > 0 } ? [.. options.Splits] : [.. store.Splits];
         if (splits.Length == 0)
         {
-            throw new InvalidOperationException("没有可训练的 split：去标注端给图片分配 train/val");
+            throw new InvalidOperationException(Text.Get("Error.NoTrainableSplit"));
         }
 
         var warnings = new List<string>();

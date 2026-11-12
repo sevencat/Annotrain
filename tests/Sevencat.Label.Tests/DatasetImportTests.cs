@@ -177,7 +177,8 @@ public class DatasetImportTests
         IReadOnlyList<TinyLabelProjectSummary> projects =
             await catalog.ListAsync(StorageLocation.FromPath(target.Root));
 
-        Assert.Equal(new[] { "第一", "第二" }, projects.Select(project => project.Name));
+        // 列表按「未结束优先 + 创建时间倒序」，所以后建的项目排在前面
+        Assert.Equal(new[] { "第二", "第一" }, projects.Select(project => project.Name));
         Assert.All(projects, project => Assert.Equal(4, project.ImageCount));
         Assert.All(projects, project => Assert.Equal(4, project.LabeledCount));
         Assert.Equal(new[] { "train", "val" }, projects[0].Splits);
@@ -213,6 +214,9 @@ public class DatasetImportTests
         using ServiceProvider provider = BuildProvider();
         var service = provider.GetRequiredService<TinyLabelProjectService>();
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
+
+        // 打开数据目录时初始化空库；「新建项目」只往库里插一行，不再建库
+        TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(workspace.Root));
 
         long projectId = await service.CreateAsync(
             StorageLocation.FromPath(workspace.Root),

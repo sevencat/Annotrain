@@ -1,34 +1,35 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
         x:Class="Sevencat.Label.App.Views.AutoLabelOptionsWindow"
-        Title="AI 标注设置"
+        Title="{l:Loc AutoLabel.Title}"
         Width="540" SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
   <StackPanel Margin="20" Spacing="10">
-    <TextBlock Text="AI 标注设置" FontSize="16" FontWeight="SemiBold" />
+    <TextBlock Text="{l:Loc AutoLabel.Title}" FontSize="16" FontWeight="SemiBold" />
     <TextBlock Opacity="0.6" FontSize="12" TextWrapping="Wrap"
-               Text="用 YOLO 导出的 .onnx 模型做预标注。结果先作为候选框显示，确认后才落成正式标注。" />
+               Text="{l:Loc AutoLabel.Description}" />
 
-    <TextBlock Text="模型文件（.onnx）" FontWeight="SemiBold" Margin="0,6,0,0" />
+    <TextBlock Text="{l:Loc AutoLabel.ModelLabel}" FontWeight="SemiBold" Margin="0,6,0,0" />
     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-      <TextBox Grid.Column="0" x:Name="ModelBox" PlaceholderText="训练导出的 best.onnx" />
-      <Button Grid.Column="1" Content="浏览…" Click="OnBrowse" />
+      <TextBox Grid.Column="0" x:Name="ModelBox" PlaceholderText="{l:Loc AutoLabel.ModelPlaceholder}" />
+      <Button Grid.Column="1" Content="{l:Loc Common.Browse}" Click="OnBrowse" />
     </Grid>
 
-    <TextBlock Text="置信度阈值（越低杂框越多）" FontWeight="SemiBold" Margin="0,6,0,0" />
+    <TextBlock Text="{l:Loc AutoLabel.ConfidenceLabel}" FontWeight="SemiBold" Margin="0,6,0,0" />
     <NumericUpDown x:Name="ConfidenceBox" Minimum="0.05" Maximum="0.95"
                    Increment="0.05" Value="0.25" FormatString="0.00" />
 
     <TextBlock Opacity="0.55" FontSize="11" TextWrapping="Wrap"
-               Text="模型输出的 class id 按项目类别顺序映射；类别数不一致时会显示为 class_N。" />
+               Text="{l:Loc AutoLabel.ClassHint}" />
 
     <TextBlock x:Name="ErrorText" Foreground="#EF4444" FontSize="12" MinHeight="16" TextWrapping="Wrap" />
 
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
-      <Button Content="取消" Click="OnCancel" IsCancel="True" />
-      <Button Content="确定" Click="OnConfirm" IsDefault="True" />
+      <Button Content="{l:Loc Common.Cancel}" Click="OnCancel" IsCancel="True" />
+      <Button Content="{l:Loc Common.Confirm}" Click="OnConfirm" IsDefault="True" />
     </StackPanel>
   </StackPanel>
 

@@ -1,5 +1,6 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using Sevencat.Core.Localization;
 
 namespace Sevencat.Core.AutoLabel;
 
@@ -32,7 +33,7 @@ public sealed class YoloOnnxRunner : IAutoLabelRunner
 
         if (!File.Exists(modelPath))
         {
-            throw new FileNotFoundException("找不到模型文件", modelPath);
+            throw new FileNotFoundException(Text.Get("Error.ModelFileNotFound"), modelPath);
         }
 
         var sessionOptions = new SessionOptions

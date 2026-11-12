@@ -1,3 +1,4 @@
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Annotation;
@@ -13,7 +14,7 @@ public sealed record AnnotationEnvelope(
 
 /// <summary>保存时版本不匹配。</summary>
 public sealed class AnnotationConcurrencyException(int expected, int actual)
-    : Exception($"标注已被修改：期望版本 {expected}，实际版本 {actual}")
+    : Exception(Text.Format("Error.ConcurrencyConflict", expected, actual))
 {
     public int Expected { get; } = expected;
 

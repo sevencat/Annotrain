@@ -1,5 +1,6 @@
 using FreeSql;
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Dataset.TinyLabel;
@@ -34,7 +35,7 @@ public sealed class TinyLabelDatabase : IDisposable
 
         if (!createIfMissing && !File.Exists(full))
         {
-            throw new FileNotFoundException($"数据库不存在：{full}", full);
+            throw new FileNotFoundException(Text.Format("Error.DatabaseFileMissing", full), full);
         }
 
         string? directory = System.IO.Path.GetDirectoryName(full);
@@ -61,7 +62,7 @@ public sealed class TinyLabelDatabase : IDisposable
 
         if (!hasImages && !createIfMissing)
         {
-            throw new InvalidDataException($"不是有效的 TinyLabel 数据库（缺 images 表）：{Path}");
+            throw new InvalidDataException(Text.Format("Error.InvalidDatabase", Path));
         }
 
         if (!hasImages)

@@ -1,18 +1,25 @@
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset;
 
 /// <summary>多种形态同时命中，必须先让用户选一种再打开。</summary>
 public sealed class DatasetFormatAmbiguousException(DatasetProbe probe) : Exception(
-    $"数据集同时命中 {probe.Candidates.Count} 种格式（{string.Join("、", probe.Candidates.Select(c => c.Format.ToDisplayName()))}），请先指定形态")
+    Text.Format(
+        "Error.FormatAmbiguous",
+        probe.Candidates.Count,
+        string.Join(Text.Get("Error.ListSeparator"), probe.Candidates.Select(c => c.Format.ToDisplayName()))))
 {
     public DatasetProbe Probe { get; } = probe;
 }
 
 /// <summary>没有 Provider 能处理该形态（VOC 只识别不解析、未识别等）。</summary>
 public sealed class DatasetFormatNotSupportedException(DatasetFormat format, string? detail = null)
-    : Exception($"暂不支持打开「{format.ToDisplayName()}」形态的数据集{(detail is null ? string.Empty : $"：{detail}")}")
+    : Exception(Text.Format(
+        "Error.FormatNotSupported",
+        format.ToDisplayName(),
+        detail is null ? string.Empty : Text.Format("Error.DetailSuffix", detail)))
 {
     public DatasetFormat Format { get; } = format;
 }

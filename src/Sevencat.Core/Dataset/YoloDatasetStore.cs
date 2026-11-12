@@ -1,6 +1,7 @@
 using System.Globalization;
 using Sevencat.Core.Annotation;
 using Sevencat.Core.Imaging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -206,7 +207,7 @@ public sealed class YoloDatasetStoreProvider(BlobStoreRegistry registry, IImageI
 
         if (string.IsNullOrWhiteSpace(probe.DescriptorPath))
         {
-            throw new InvalidOperationException("YOLO 数据集缺少 data.yaml");
+            throw new InvalidOperationException(Text.Get("Error.YoloDescriptorMissing"));
         }
 
         IBlobStore store = registry.Get(probe.Root);
@@ -219,7 +220,7 @@ public sealed class YoloDatasetStoreProvider(BlobStoreRegistry registry, IImageI
         YoloDataConfig config = YoloDataConfig.Parse(yaml);
         if (config.Names.Count == 0)
         {
-            throw new InvalidDataException($"data.yaml 没有 names：{probe.DescriptorPath}");
+            throw new InvalidDataException(Text.Format("Error.YoloNamesMissing", probe.DescriptorPath));
         }
 
         string basePrefix = Path.GetDirectoryName(probe.DescriptorPath)?.Replace('\\', '/') ?? string.Empty;

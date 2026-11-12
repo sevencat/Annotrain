@@ -1,4 +1,5 @@
 using System.Text;
+using Sevencat.Core.Localization;
 
 namespace Sevencat.Core.Storage;
 
@@ -17,7 +18,7 @@ internal static class AtomicFile
 
         string fullPath = Path.GetFullPath(path);
         string directory = Path.GetDirectoryName(fullPath)
-            ?? throw new ArgumentException($"无法确定目录：{path}", nameof(path));
+            ?? throw new ArgumentException(Text.Format("Error.DirectoryUnknown", path), nameof(path));
         Directory.CreateDirectory(directory);
 
         string tempPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");

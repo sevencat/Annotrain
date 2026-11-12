@@ -6,6 +6,7 @@ using Sevencat.Core.Annotation;
 using Sevencat.Core.Annotation.Formats;
 using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Imaging;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -65,7 +66,7 @@ public sealed class DatasetImportService(
 
         if (splits.Count == 0)
         {
-            throw new InvalidOperationException($"源数据集没有可导入的图片：{options.Source}");
+            throw new InvalidOperationException(Text.Format("Error.SourceHasNoImages", options.Source));
         }
 
         ClassCatalog classes = MergeClasses(splits, warnings);
@@ -211,7 +212,7 @@ public sealed class DatasetImportService(
 
         if (format == DatasetFormat.TinyLabelDb)
         {
-            throw new NotSupportedException("源数据集已经是「图片目录 + 数据库」形态，直接打开即可，无需导入");
+            throw new NotSupportedException(Text.Get("Error.SourceAlreadyImageDatabase"));
         }
 
         // 歧义或强制指定形态时，入口文件必须换成该形态自己的（data.yaml 不能交给 COCO Provider）
@@ -220,7 +221,7 @@ public sealed class DatasetImportService(
         {
             throw new DatasetFormatNotSupportedException(
                 format,
-                $"探测没有在 {options.Source} 找到该形态的描述文件（{result.Message}）");
+                Text.Format("Error.DescriptorMissingForFormat", options.Source, result.Message));
         }
 
         return (format, result with { Format = format, DescriptorPath = candidate.DescriptorPath });
@@ -623,7 +624,7 @@ public sealed class DatasetImportService(
     {
         if (!destination.IsFile)
         {
-            throw new NotSupportedException("导入目标必须是本地目录：SQLite 的 WAL 需要本地随机写");
+            throw new NotSupportedException(Text.Get("Error.ImportTargetNotLocal"));
         }
     }
 
@@ -635,7 +636,7 @@ public sealed class DatasetImportService(
                 Path.GetFullPath(options.Destination.Root).TrimEnd(Path.DirectorySeparatorChar),
                 StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("导入目标不能与源数据集根目录相同，否则会覆盖原数据");
+            throw new InvalidOperationException(Text.Get("Error.ImportTargetSameAsSource"));
         }
     }
 

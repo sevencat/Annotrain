@@ -15,6 +15,10 @@ internal static class Program
             return 1;
         }
 
+        // --data <目录>：数据根目录（配置库 / 训练产物 / 日志），默认 exe 同级 data
+        AppDataPaths.Initialize(AppDataPaths.ReadDataArgument(args));
+        AppDataPaths.EnsureCreated();
+
         // 图像后端在 exe 入口注册：训练数据管线与界面共用同一个 SkiaSharp 后端。
         ImageRuntime.Use(new SkiaBackend());
 

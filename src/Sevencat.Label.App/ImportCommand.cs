@@ -71,7 +71,7 @@ internal sealed record ImportCommand(
             return false;
         }
 
-        destination ??= Path.Combine(AppPaths.ConfigDirectory, "imported");
+        destination ??= AppDataPaths.DataDirectory;
         command = new ImportCommand(
             source,
             destination,

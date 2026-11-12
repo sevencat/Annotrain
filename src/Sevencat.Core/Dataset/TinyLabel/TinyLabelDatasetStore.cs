@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Annotation;
 using Sevencat.Core.Annotation.Formats;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 
@@ -9,7 +10,10 @@ namespace Sevencat.Core.Dataset.TinyLabel;
 
 /// <summary>库里有多个项目、又没指定项目时抛出：让界面先选项目。</summary>
 public sealed class DatasetProjectSelectionException(IReadOnlyList<ProjectEntity> projects) : Exception(
-    $"数据库里有 {projects.Count} 个项目，请先指定：{string.Join("、", projects.Select(p => $"{p.Name}({p.Id})"))}")
+    Text.Format(
+        "Error.MultiProject",
+        projects.Count,
+        string.Join(Text.Get("Error.ListSeparator"), projects.Select(p => $"{p.Name}({p.Id})"))))
 {
     public IReadOnlyList<ProjectEntity> Projects { get; } = projects;
 }
@@ -212,7 +216,7 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
         {
             if (!long.TryParse(datasetId, out long parsed))
             {
-                throw new ArgumentException($"项目 Id 必须是数字：{datasetId}", nameof(datasetId));
+                throw new ArgumentException(Text.Format("Error.ProjectIdNotNumeric", datasetId), nameof(datasetId));
             }
 
             projectId = parsed;
@@ -246,12 +250,12 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
     {
         if (probe.Root.Scheme != StorageLocation.FileScheme)
         {
-            throw new NotSupportedException("数据库形态只支持本地 file:// 数据集根：SQLite 的 WAL 需要本地随机写");
+            throw new NotSupportedException(Text.Get("Error.DatabaseRequiresLocalFile"));
         }
 
         if (string.IsNullOrWhiteSpace(probe.DescriptorPath))
         {
-            throw new InvalidOperationException("探测结果缺少 .db 文件路径");
+            throw new InvalidOperationException(Text.Get("Error.DetectMissingDbPath"));
         }
 
         string relative = probe.DescriptorPath.Replace('/', Path.DirectorySeparatorChar);
@@ -266,13 +270,13 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
 
         if (projects.Count == 0)
         {
-            throw new InvalidDataException($"数据库里没有项目：{db.Path}");
+            throw new InvalidDataException(Text.Format("Error.DatabaseNoProject", db.Path));
         }
 
         if (projectId is { } id)
         {
             return projects.FirstOrDefault(project => project.Id == id)
-                   ?? throw new InvalidOperationException($"数据库里没有项目 {id}");
+                   ?? throw new InvalidOperationException(Text.Format("Error.DatabaseNoProjectId", id));
         }
 
         return projects.Count == 1 ? projects[0] : throw new DatasetProjectSelectionException(projects);

@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Infrastructure;
+using Sevencat.Core.Localization;
 using Sevencat.Label;
 using Sevencat.Label.App.ViewModels;
 using Sevencat.Label.App.Views;
@@ -24,8 +25,15 @@ public partial class App : Application
         services.AddAnnotrainLabel();
         Services = services.BuildServiceProvider();
 
+        // 语言：设置里存 zh/en，空值跟随系统
+        AppSettings settings = Services.GetRequiredService<AppSettings>();
+        Localizer.Instance.SetLanguage(
+            string.IsNullOrWhiteSpace(settings.Language)
+                ? Localizer.DetectSystemLanguage()
+                : settings.Language);
+
         ILogger<App> logger = Services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
-        logger.LogInformation("标注应用启动，配置目录：{Directory}", AppPaths.ConfigDirectory);
+        logger.LogInformation("标注应用启动，数据目录：{Directory}", AppDataPaths.DataDirectory);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

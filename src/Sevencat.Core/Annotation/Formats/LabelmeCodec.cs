@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sevencat.Core.Annotation;
+using Sevencat.Core.Localization;
 using Sevencat.Core.Model;
 
 namespace Sevencat.Core.Annotation.Formats;
@@ -77,7 +78,7 @@ public sealed class LabelmeCodec : IAnnotationCodec
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            throw new InvalidDataException("标注文件为空");
+            throw new InvalidDataException(Text.Get("Error.LabelFileEmpty"));
         }
 
         LabelmeFileDto? dto;
@@ -87,12 +88,12 @@ public sealed class LabelmeCodec : IAnnotationCodec
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException("标注文件不是合法的 JSON", ex);
+            throw new InvalidDataException(Text.Get("Error.LabelFileInvalidJson"), ex);
         }
 
         if (dto is null)
         {
-            throw new InvalidDataException("标注文件内容为 null");
+            throw new InvalidDataException(Text.Get("Error.LabelFileNull"));
         }
 
         var warnings = new List<string>();
