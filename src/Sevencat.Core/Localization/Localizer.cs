@@ -35,7 +35,7 @@ public sealed class Localizer : INotifyPropertyChanged
         // ── 标注主界面 ──
         ["Label.Title"] = "Annotrain 标注",
         ["Label.Running"] = "运行中",
-        ["Label.OpenDataDir"] = "打开数据目录…",
+        ["Label.OpenDataDir"] = "打开数据目录",
         ["Label.PickDataDir"] = "选择数据目录（放 annotrain.db 的目录）",
         ["Label.Projects"] = "项目管理",
         ["Label.ProjectsSummary"] = "共 {0} 个项目 · {1} 个进行中",
@@ -109,6 +109,30 @@ public sealed class Localizer : INotifyPropertyChanged
         ["Label.ImportFolderTitle"] = "导入文件夹：图片会复制进项目目录",
         ["Label.ScanFolderTitle"] = "扫描目录：只登记原目录里的图片，不复制文件",
         ["Label.ImagesFileType"] = "图片",
+
+        // ── 顶栏：Web 地址 / 用户 / 关于 ──
+        ["Label.WebPort"] = "端口 {0}",
+        ["Label.OpenWeb"] = "打开",
+        ["Label.OpenWebFailed"] = "打不开浏览器：{0}",
+        ["Label.UserManagement"] = "用户管理",
+        ["Label.About"] = "关于",
+        ["Label.SwitchDataDir"] = "切换数据目录…",
+        ["Label.NoDataDir"] = "还没有打开数据目录：先「切换数据目录…」选一个",
+        ["Label.OpenFolderFailed"] = "打开目录失败：{0}",
+
+        // ── 关于 ──
+        ["About.Version"] = "版本",
+        ["About.Runtime"] = "运行时",
+        ["About.DataDir"] = "数据目录",
+        ["About.Database"] = "数据库",
+        ["About.Web"] = "Web 地址",
+
+        // ── 用户管理 ──
+        ["Users.Hint"] = "账号归标注 Web 端管，存在数据目录的 settings.db（表 web_users）；网页登录用的就是它。",
+        ["Users.Empty"] = "还没有用户",
+        ["Users.Pending"] = "首次启动会自动建 admin，初始密码写在数据目录的 web-admin.txt；这里暂时只能看，不能加人 / 改密码。",
+        ["Users.RoleAdmin"] = "管理员",
+        ["Users.RoleAnnotator"] = "标注员",
 
         // ── 状态 ──
         ["State.Pending"] = "未标注",
@@ -288,6 +312,15 @@ public sealed class Localizer : INotifyPropertyChanged
         ["Error.ExportTargetSameAsSource"] = "导出目标不能与源数据集根目录相同，请换一个目录",
         ["Error.ExportNoSplit"] = "源数据集没有可导出的 split（图片都没分配 train/val/test）",
         ["Error.ModelFileNotFound"] = "找不到模型文件",
+
+        // ── Web 服务端返回给页面的提示 ──
+        ["Web.Unauthorized"] = "未登录或登录已过期",
+        ["Web.Forbidden"] = "没有权限",
+        ["Web.LoginFailed"] = "用户名或密码不对",
+        ["Web.NotFound"] = "找不到 {0}",
+        ["Error.ImageNotFound"] = "图片不存在：{0}",
+        ["Error.ImageLocked"] = "图片 {0} 正被其他人处理，请稍后再试",
+        ["Error.RevisionConflict"] = "图片 {0} 的标注已被修改：期望版本 {1}，实际版本 {2}",
         ["Error.FormatNotSupported"] = "暂不支持打开「{0}」形态的数据集{1}",
         ["Error.DetailSuffix"] = "：{0}",
         ["Error.ListSeparator"] = "、",
@@ -316,7 +349,7 @@ public sealed class Localizer : INotifyPropertyChanged
         // ── Label main window ──
         ["Label.Title"] = "Annotrain Labeler",
         ["Label.Running"] = "Running",
-        ["Label.OpenDataDir"] = "Open data folder…",
+        ["Label.OpenDataDir"] = "Open data folder",
         ["Label.PickDataDir"] = "Pick the data folder (the one holding annotrain.db)",
         ["Label.Projects"] = "Projects",
         ["Label.ProjectsSummary"] = "{0} projects · {1} in progress",
@@ -390,6 +423,30 @@ public sealed class Localizer : INotifyPropertyChanged
         ["Label.ImportFolderTitle"] = "Import folder: images are copied into the project",
         ["Label.ScanFolderTitle"] = "Scan folder: register images in place, no copy",
         ["Label.ImagesFileType"] = "Images",
+
+        // ── Top bar: web address / users / about ──
+        ["Label.WebPort"] = "Port {0}",
+        ["Label.OpenWeb"] = "Open",
+        ["Label.OpenWebFailed"] = "Cannot open the browser: {0}",
+        ["Label.UserManagement"] = "Users",
+        ["Label.About"] = "About",
+        ["Label.SwitchDataDir"] = "Change data folder…",
+        ["Label.NoDataDir"] = "No data folder opened yet: use \"Change data folder…\" first",
+        ["Label.OpenFolderFailed"] = "Cannot open the folder: {0}",
+
+        // ── About ──
+        ["About.Version"] = "Version",
+        ["About.Runtime"] = "Runtime",
+        ["About.DataDir"] = "Data folder",
+        ["About.Database"] = "Database",
+        ["About.Web"] = "Web address",
+
+        // ── Users ──
+        ["Users.Hint"] = "Accounts belong to the web labeler: they live in settings.db (table web_users) in the data folder and are what the web login uses.",
+        ["Users.Empty"] = "No user yet",
+        ["Users.Pending"] = "The first launch creates admin and writes the initial password to web-admin.txt in the data folder; this window is read-only for now.",
+        ["Users.RoleAdmin"] = "Admin",
+        ["Users.RoleAnnotator"] = "Annotator",
 
         // ── State ──
         ["State.Pending"] = "Unlabeled",
@@ -569,6 +626,15 @@ public sealed class Localizer : INotifyPropertyChanged
         ["Error.ExportTargetSameAsSource"] = "The export target must differ from the source dataset root; pick another folder",
         ["Error.ExportNoSplit"] = "The source dataset has no exportable split (no image assigned to train/val/test)",
         ["Error.ModelFileNotFound"] = "Model file not found",
+
+        // ── Messages returned to the web page ──
+        ["Web.Unauthorized"] = "Not signed in or the session expired",
+        ["Web.Forbidden"] = "Not allowed",
+        ["Web.LoginFailed"] = "Wrong user name or password",
+        ["Web.NotFound"] = "{0} not found",
+        ["Error.ImageNotFound"] = "Image not found: {0}",
+        ["Error.ImageLocked"] = "Image {0} is being handled by someone else; try again later",
+        ["Error.RevisionConflict"] = "Annotations of image {0} changed: expected revision {1}, actual {2}",
         ["Error.FormatNotSupported"] = "Opening a \"{0}\" dataset is not supported{1}",
         ["Error.DetailSuffix"] = ": {0}",
         ["Error.ListSeparator"] = ", ",

@@ -21,7 +21,7 @@
 
 任务：
 1. 建两个解决方案与项目：
-   - `Sevencat.Label.sln`：`Sevencat.Core`、`Sevencat.Label`、`Sevencat.Label.App`(exe)、`Sevencat.Label.Web`、`Sevencat.Label.Tests`
+   - `Sevencat.Label.sln`：`Sevencat.Core`、`Sevencat.Label`、`Sevencat.Label.App`(exe)、`Sevencat.Label.Server`、`Sevencat.Label.Tests`（前端工程 `src/Sevencat.Label.Web` 不是 .NET 项目，不进 sln）
    - `Sevencat.Train.sln`：`Sevencat.Core`、`Sevencat.Train.App`(exe)、`Sevencat.Train.Engine`、`Sevencat.Train.Web`、`Sevencat.Train.Engine.Tests`
 2. `Directory.Build.props` / `Directory.Packages.props`：`net10.0`、nullable、集中包版本（Avalonia 12.1.5、Material.Avalonia 最新、Sevencat.ImageFacade(.SkiaSharp) 最新、TorchSharp）。
 3. 两个 exe 的 Avalonia 引导（PlatformDetect、主题、主窗口壳）+ Material 主题令牌。
@@ -63,7 +63,7 @@
 ## M3 标注 Web
 
 任务：
-1. 搬 `TinyLabel.Server` 的 `ServerHost` / `ServerOptions` / `Data`（SQLite）/ `Security` 到 `Sevencat.Label.Web`，改为类库，由 `Sevencat.Label.App` 启动。
+1. 搬 `TinyLabel.Server` 的 `ServerHost` / `ServerOptions` / `Data`（SQLite）/ `Security` 到 `Sevencat.Label.Server`，改为类库，由 `Sevencat.Label.App` 启动。（前端已完成从 `F:\code\TinyLabel\web` 的移植，落在 `src/Sevencat.Label.Web`）
 2. 搬 `Endpoints`（Auth / Project / Image / Stats）与 `WebPageEndpoints`（gzip 内嵌静态页）。
 3. 数据集浏览、标注查看与统计页面走 `IAnnotationStore` / `IDatasetStore` 接口，不重复实现解析。
 4. `ProjectService` 里与 Export 相关的逻辑对接 `IImageAnnotationCodec`。

@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
+        x:Class="Sevencat.Label.App.Views.AboutWindow"
+        Title="{l:Loc Label.About}"
+        Width="520" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock Text="{l:Loc Label.Title}" FontSize="18" FontWeight="SemiBold" />
+
+    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+          RowSpacing="8" ColumnSpacing="14">
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Loc About.Version}"
+                 FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="VersionText" FontSize="12"
+                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Loc About.Runtime}"
+                 FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="RuntimeText" FontSize="12" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Text="{l:Loc About.Web}"
+                 FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="WebText" FontSize="12"
+                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="3" Grid.Column="0" Text="{l:Loc About.DataDir}"
+                 FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DataDirText" FontSize="12" TextWrapping="Wrap" />
+
+      <TextBlock Grid.Row="4" Grid.Column="0" Text="{l:Loc About.Database}"
+                 FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+      <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DatabaseText" FontSize="12" TextWrapping="Wrap" />
+    </Grid>
+
+    <Button Content="{l:Loc Common.Close}" HorizontalAlignment="Right" Click="OnClose" IsDefault="True" />
+  </StackPanel>
+
+</Window>

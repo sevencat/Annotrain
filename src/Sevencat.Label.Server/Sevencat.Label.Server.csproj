@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Sevencat.Label.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sevencat.Core\Sevencat.Core.csproj" />
+    <ProjectReference Include="..\Sevencat.Label\Sevencat.Label.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 前端构建产物：npm run build:server 生成；没有也能编译，只是页面 404 -->
+    <EmbeddedResource Include="WebUI\index.html.gz" Condition="Exists('WebUI\index.html.gz')" />
+    <EmbeddedResource Include="WebUI\favicon.ico" Condition="Exists('WebUI\favicon.ico')" />
+  </ItemGroup>
+
+</Project>

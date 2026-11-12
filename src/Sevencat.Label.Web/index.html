@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <title><%= productName %></title>
+
+    <meta charset="utf-8">
+    <meta name="description" content="<%= productDescription %>">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1<% if (ctx.mode.cordova || ctx.mode.capacitor) { %>, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover<% } %>">
+    <!--
+      single file 构建会把 JS/CSS 全部内联进本页面，所以 script-src 必须允许 'unsafe-inline'；
+      图片用 blob:（fetch 带 token 取回后转 objectURL），图标字体用 data:。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:;<% if (ctx.dev) { %> connect-src 'self' ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob:;<% } else { %> connect-src 'self';<% } %>"
+    />
+
+    <link rel="icon" type="image/ico" href="favicon.ico">
+  </head>
+  <body>
+    <!-- quasar:entry-point -->
+  </body>
+</html>

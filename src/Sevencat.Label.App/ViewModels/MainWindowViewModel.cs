@@ -12,6 +12,7 @@ using Sevencat.Core.Infrastructure.Logging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 using Sevencat.Label;
+using Sevencat.Label.Server;
 
 namespace Sevencat.Label.App.ViewModels;
 
@@ -27,6 +28,9 @@ public partial class MainWindowViewModel : ObservableObject
 {
     /// <summary>图片清单每页条数。</summary>
     public const int DefaultPageSize = 50;
+
+    /// <summary>标注 Web 端地址（解析一次，端口从里面取）。</summary>
+    private static readonly Uri WebAddress = new(LabelWebModule.DefaultUrl);
 
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly LabelDatasetImportService _importer;
@@ -57,6 +61,18 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>当前数据目录（<c>annotrain.db</c> 所在目录）。</summary>
     [ObservableProperty]
     private string _dataDirectory = string.Empty;
+
+    // ── 顶栏：标注 Web 端地址 ────────────────────────────────────────────────
+
+    /// <summary>标注 Web 端的监听地址；服务端（M3）落地前只做展示，与「打开」按钮共用。</summary>
+    public string WebUrl => LabelWebModule.DefaultUrl;
+
+    /// <summary>监听端口（从 <see cref="LabelWebModule.DefaultUrl"/> 里取，避免两处写死）。</summary>
+    public int WebPort => WebAddress.Port;
+
+    /// <summary>「端口 5180」（切语言后重算）。</summary>
+    [ObservableProperty]
+    private string _webPortText = string.Empty;
 
     [ObservableProperty]
     private bool _isBusy;
@@ -157,6 +173,7 @@ public partial class MainWindowViewModel : ObservableObject
         DataDirectory = AppDataPaths.DataDirectory;
         _selectedLanguage = Localizer.Supported.FirstOrDefault(option => option.Code == Loc.Language);
         _categoryText = Loc.Format("Label.ManageClasses", 0);
+        _webPortText = Loc.Format("Label.WebPort", WebAddress.Port);
         _pageText = Loc.Format("Label.PageOf", 1, 1);
         _totalText = Loc.Format("Label.TotalImages", 0);
         _projectsSummary = Loc.Format("Label.ProjectsSummary", 0, 0);
@@ -190,6 +207,7 @@ public partial class MainWindowViewModel : ObservableObject
         Title = Loc.Get("Label.Title");
         Status = Loc.Get("Label.Ready");
         CategoryText = Loc.Format("Label.ManageClasses", _classes.Count);
+        WebPortText = Loc.Format("Label.WebPort", WebAddress.Port);
         PageText = Loc.Format("Label.PageOf", PageIndex + 1, 1);
         TotalText = Loc.Format("Label.TotalImages", 0);
         ProjectsSummary = Loc.Format("Label.ProjectsSummary", Projects.Count, Projects.Count(project => !project.IsClosed));

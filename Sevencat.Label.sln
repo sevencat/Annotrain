@@ -8,7 +8,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sevencat.Label", "src\Seven
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sevencat.Label.App", "src\Sevencat.Label.App\Sevencat.Label.App.csproj", "{33333333-3333-3333-3333-333333333333}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sevencat.Label.Web", "src\Sevencat.Label.Web\Sevencat.Label.Web.csproj", "{44444444-4444-4444-4444-444444444444}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sevencat.Label.Server", "src\Sevencat.Label.Server\Sevencat.Label.Server.csproj", "{44444444-4444-4444-4444-444444444444}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sevencat.Label.Tests", "tests\Sevencat.Label.Tests\Sevencat.Label.Tests.csproj", "{55555555-5555-5555-5555-555555555555}"
 EndProject

@@ -21,7 +21,7 @@
 
 | 编号 | 里程碑 | 任务 | 状态 | 备注 |
 | --- | --- | --- | --- | --- |
-| B-1 | M0 | `Sevencat.Label.sln` + 5 项目 | 完成 | Core/Label/Label.App/Label.Web/Tests |
+| B-1 | M0 | `Sevencat.Label.sln` + 5 项目 | 完成 | Core/Label/Label.App/Label.Server/Tests；前端工程 `src/Sevencat.Label.Web` 不在 sln 里 |
 | B-2 | M0 | `Sevencat.Train.sln` + 5 项目 | 完成 | Core/Train.App/Train.Engine/Train.Web/Tests |
 | B-3 | M0 | 集中包版本与构建属性 | 完成 | net10、Avalonia 12.1.5、Material 3.21.0 |
 | B-4 | M0 | 两个 exe 引导 + Material 主题 | 完成 | 启动验证通过 |
@@ -52,11 +52,12 @@
 | L-2 | M2 | 主窗口 VM 与视图迁移 | 进行中 | 按 TinyLabel 服务端首页重排：左项目管理 + 右概览/工具栏/表格/分页；缩略图与设置页未做 |
 | L-3 | M2 | 撤销重做 + 原子保存 | 未开始 | 保存已走 `DatabaseAnnotationStore` 乐观锁，撤销未做 |
 | L-4 | M2 | 数据集浏览器（虚拟化+缩略图） | 进行中 | 项目列表 + 图片表格已通；虚拟化 / 缩略图未做 |
-| W-1 | M3 | ServerHost 类库化 | 未开始 | 由 Label.Avalonia 启动 |
-| W-2 | M3 | 项目/图片/统计 API 迁移 | 未开始 | 走 Core 接口 |
-| W-3 | M3 | 内嵌页面与导出 | 未开始 | gzip 静态资源 |
-| W-4 | M3 | 桌面端服务面板 | 未开始 | 端口/状态/打开浏览器 |
+| W-1 | M3 | ServerHost 类库化 | 完成 | `Sevencat.Label.Server`：Kestrel 只绑 `http://127.0.0.1:5180`，业务对象复用桌面端容器，随桌面端起停；端口占用只记日志 |
+| W-2 | M3 | 项目/图片/统计 API 迁移 | 进行中 | 已实现 auth（login/me/logout）、projects（列表/详情/stats/next-image）、images（元信息/content/thumb/claim/release/skip/return/annotation 读写）；账号存 `settings.db` 的 `web_users`，令牌 HMAC 自签；AutoLabel / 导出 / 训练端点未搬 |
+| W-3 | M3 | 内嵌页面与导出 | 完成 | 前端 `src/Sevencat.Label.Web`（Quasar 单文件 895 KB → gzip 336 KB）编进程序集，按 `Accept-Encoding` 发压缩体；`WebPageDirectory` 可指到 `dist/spa` 免编译调试 |
+| W-4 | M3 | 桌面端服务面板 | 完成 | 顶栏「端口 + 地址 + 打开」可用；用户管理窗列出 `web_users`，关于窗显示版本 / 运行时 / 地址 / 数据目录 |
 | W-5 | M3 | 项目管理：格式字段、自动检测、重新检测 | 未开始 | 与 S-9 共用探测实现 |
+| W-6 | M3 | Web 账号与权限 | 进行中 | 只有 admin / annotator 两种角色；登录后可看全部项目，暂不做成员分配与审核流 |
 | T-1 | M5 | 训练主界面（单页：工具栏 / 曲线 / 状态） | 完成 | `TrainingChart` 自绘 loss + mAP；干跑阶段图表显示占位提示 |
 | T-2 | M6 | 检测验证对话框（选图 → ONNX 推理 → 叠加显示） | 完成 | 复用 `YoloOnnxRunner`；模型路径记入 `AppSettings`，从工具栏进入 |
 | E-1 | M4 | Core/NN/Models/IO/Export 迁移 | 完成 | 全量复制到 `Sevencat.Train.Engine`（Core/Data/NN/Models/IO/Export/Training/Sessions），命名空间改为 `Sevencat.Train.Engine.*` |
@@ -114,3 +115,6 @@
 | 2026-11-12 | 修「新建」不生效：根因是未打开数据目录时 `OnCreateProject` 只写一行不显眼的状态就返回（标注端上次数据目录又被训练端覆盖导致启动后没有工作区）。改为「新建/导入」先就地选目录并打开再继续；`OpenLastWorkspaceAsync` 对目录不存在给出明确提示；`AppSettings` 拆出 `LastTrainDataDirectory`，训练端不再覆盖标注端的 `LastDataDirectory` | UI 自动化实测：有工作区时新建 → 对话框 → 创建 → 列表出现并选中新项目（同一工作区连续新建 2 个均正常）；无工作区时点击新建 → 弹出目录选择；新增 `ProjectCreateTests` 覆盖「建库 → 探测 → 浏览器打开」数据链路，Label 测试 49/49 通过 |
 | 2026-11-12 | 训练引擎落地：OmniTensorSharp 的 Core/Data/NN/Models/IO/Export/Training/Train.App 训练会话共 97 个文件复制到 `Sevencat.Train.Engine`（`Core|Data|NN|Models|IO|Export|Training|Sessions`），命名空间统一为 `Sevencat.Train.Engine.*`；新增 `YoloDatasetTrainingRunner` 把 `IDatasetStore` 样本 → 归一化标签 → 批次 → 训练循环，图片字节走 `IBlobStore.OpenReadAsync`，产出 best/model/model-ema/optimizer.bin/train.json；图像后端统一由 exe 入口注册（`ImageRuntime.Use(new SkiaBackend())`），引擎只依赖 ImageFacade 抽象、不引任何编解码实现 | 训练程序 `AddAnnotrainTrainingEngine()` 替换干跑实现；工具栏 epochs/batch/imgsz 生效，`TrainingProgress` 驱动曲线、日志回填面板；新增 1 个真训练冒烟测试（4 图 / 1 epoch / 64px，约 1s 通过），测试进程同样注册 SkiaSharp |
 | 2026-11-12 | Core 抛错文案接多语言：新增 `Text`（`Localizer` 门面，`Get` / `Format`）与 47 条 `Error.*`、5 条 `Dataset.Format.*` 文案；25 个 Core 文件的 56 处中文异常消息（存储越界/后端未注册、模型缺失、标注与 COCO codec、TinyLabel 工作区/项目/图片/类别/库、导入导出、数据集探测歧义与不支持的形态）改为查表；项目名与类别名的校验文案复用界面的 `Project.NameRequired/NameTooLong`、`Classes.NameRequired`（后者统一为「类别名不能为空」） | 英文界面里「导入失败：{0}」「打开数据集失败：{0}」不会再夹半句中文；新增 `ExceptionMessages_FollowCurrentLanguage` 用例，Label 测试 55/55、Train 测试 3/3 通过；仍未本地化的只剩日志模板、导入/导出 `Summary` 与探测结论文案 |
+| 2026-11-12 | 标注端顶栏改版：中间不再放数据目录（底栏已有），改为「端口 5180 + `http://127.0.0.1:5180` + 打开」，端口与地址取自 `LabelWebModule.DefaultUrl`，点「打开」交给系统浏览器；右侧按钮变为 用户管理 / 打开数据目录 / 关于——「打开数据目录」改成在资源管理器里打开（不再弹选目录），换目录挪到底栏「切换数据目录…」；新增 `AboutWindow`（版本 / 运行时 / Web 地址 / 数据目录 / 数据库）与 `UserManagementWindow` 占位（users 表与登录随 M3） | Label.App 增加对 `Sevencat.Label.Server` 的引用，地址只写一处；服务端尚未启动，点「打开」会得到浏览器连不上的页面；启动冒烟实测窗口正常、按钮就位、日志无异常，Label 测试 55/55 通过 |
+| 2026-11-12 | `src/Sevencat.Label.Web` 改成前端工程：清掉里面的 C# 类库，把 `F:\code\TinyLabel\web`（Quasar + Vue 3 + TS，`vite-plugin-singlefile` 单文件构建）整体移植过来，包名/品牌改 `annotrain-web` / `Annotrain`，localStorage 键改 `annotrain.*`，labelme 私有元数据键跟着 Core 用 `annotrain`（版本对齐 5.0.1），dev 代理指向 `http://127.0.0.1:5180`（`ANNOTRAIN_API` 可覆盖），`scripts/build-server-page.mjs` 输出改到 `src/Sevencat.Label.Server/WebUI`；C# 侧新建 `Sevencat.Label.Server` 类库存 `LabelWebModule`，sln 与 Label.App 引用同步改 | `npm install` + `typecheck` + `build` 通过（单文件 894.7 KB），`build:server` 压出 336 KB 的 `index.html.gz`；两个 sln 编译 0 错误、Label 测试 55/55；服务端接口（W-2）未实现，页面能起但请求会失败 |
+| 2026-11-12 | 标注 Web 服务端落地：`Sevencat.Label.Server` 用 Kestrel 起 Minimal API（只绑 `127.0.0.1:5180`），随桌面端启停；`TokenProtector`（HMAC 自签，密钥落 `data/web-token.key`）+ `PasswordHasher`（PBKDF2）+ `TokenAuthMiddleware`（`/api/*` 认 `Bearer` 或 `?token=`），账号存 `settings.db` 的 `web_users`，首启自动建 admin 并把初始密码写进 `data/web-admin.txt`；实现 `/api/health`、`/api/auth/{login,me,logout}`、`/api/projects`（列表 / 详情 / stats / next-image）、`/api/images/{id}`（元信息 / content / thumb / claim / release / skip / return / annotation GET+PUT，版本冲突回 409 带 current）；Core 新增 `TinyLabelTaskService`（5 分钟租约、next 的 after 回绕、skip / 退回、乐观锁保存、按状态统计），`TinyLabelProjectSummary` 补 `StorageMode`；内嵌页面按 `Accept-Encoding` 发 gzip / 明文 | 端到端实测：health ok、页面 200、无令牌 401、登录成功、projects=1（4 图 / 3 类）、stats 正确、content 返回 image/png 399B、旧版本 PUT 409、新版本 PUT rev 1→2、缺图 404；新增 `TinyLabelTaskServiceTests`（55→56 全通过）；桌面端「用户管理」改为列出 `web_users`；未做：thumb 真缩略、按成员过滤项目、AutoLabel / 导出 / 训练端点 |

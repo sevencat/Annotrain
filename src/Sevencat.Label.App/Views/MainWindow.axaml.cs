@@ -11,6 +11,8 @@ using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 using Sevencat.Label;
 using Sevencat.Label.App.ViewModels;
+using Sevencat.Label.Server;
+using Sevencat.Label.Server.Data;
 
 namespace Sevencat.Label.App.Views;
 
@@ -22,9 +24,30 @@ public partial class MainWindow : Window
 
     private IServiceProvider? Services => (Application.Current as App)?.Services;
 
-    // ── 数据目录 / 刷新 ──────────────────────────────────────────────────────
+    // ── 顶栏：Web 入口 / 数据目录 / 用户 / 关于 ────────────────────────────────
 
-    private async void OnOpenWorkspace(object? sender, RoutedEventArgs e)
+    /// <summary>「打开数据目录」：在资源管理器里打开，不弹选目录（换目录在底栏「切换数据目录…」）。</summary>
+    private void OnOpenDataFolder(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(viewModel.DataDirectory) || !Directory.Exists(viewModel.DataDirectory))
+        {
+            viewModel.Report(Loc.Get("Label.NoDataDir"));
+            return;
+        }
+
+        if (!OpenInExplorer(viewModel.DataDirectory))
+        {
+            viewModel.Report(Loc.Format("Label.OpenFolderFailed", viewModel.DataDirectory));
+        }
+    }
+
+    /// <summary>底栏「切换数据目录…」：选一个目录后按它读库里的项目列表。</summary>
+    private async void OnPickDataFolder(object? sender, RoutedEventArgs e)
     {
         string? folder = await PickFolderAsync(Loc.Get("Label.PickDataDir"));
 
@@ -33,6 +56,44 @@ public partial class MainWindow : Window
             await viewModel.OpenWorkspaceAsync(folder);
         }
     }
+
+    /// <summary>Web 地址后面的「打开」：交给系统默认浏览器。</summary>
+    private void OnOpenWeb(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (!OpenInBrowser(viewModel.WebUrl))
+        {
+            viewModel.Report(Loc.Format("Label.OpenWebFailed", viewModel.WebUrl));
+        }
+    }
+
+    private async void OnUserManagement(object? sender, RoutedEventArgs e)
+    {
+        // 账号归 Web 服务端管（settings.db 的 web_users），这里只读出来看看
+        var options = new ServerOptions { DataDirectory = AppDataPaths.DataDirectory };
+
+        using var users = new WebUserStore(options.UsersDatabasePath);
+        var dialog = new UserManagementWindow(users.List());
+
+        await dialog.ShowDialog(this);
+    }
+
+    private async void OnAbout(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var dialog = new AboutWindow(viewModel.WebUrl, viewModel.DataDirectory, viewModel.DatabasePath);
+        await dialog.ShowDialog(this);
+    }
+
+    // ── 刷新 ─────────────────────────────────────────────────────────────────
 
     private async void OnRefresh(object? sender, RoutedEventArgs e)
     {
@@ -448,7 +509,7 @@ public partial class MainWindow : Window
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
     }
 
-    private static void OpenInExplorer(string folder)
+    private static bool OpenInExplorer(string folder)
     {
         try
         {
@@ -458,10 +519,26 @@ public partial class MainWindow : Window
                 Arguments = $"\"{folder}\"",
                 UseShellExecute = true,
             });
+
+            return true;
         }
         catch (Exception)
         {
             // 打不开资源管理器不影响程序
+            return false;
+        }
+    }
+
+    private static bool OpenInBrowser(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 }

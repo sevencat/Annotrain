@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Sevencat.Core\Sevencat.Core.csproj" />
     <ProjectReference Include="..\Sevencat.Label\Sevencat.Label.csproj" />
+    <ProjectReference Include="..\Sevencat.Label.Server\Sevencat.Label.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>

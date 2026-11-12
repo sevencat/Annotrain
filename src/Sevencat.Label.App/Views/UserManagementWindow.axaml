@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
+        xmlns:views="using:Sevencat.Label.App.Views"
+        x:Class="Sevencat.Label.App.Views.UserManagementWindow"
+        x:DataType="views:UserManagementWindow"
+        Title="{l:Loc Label.UserManagement}"
+        Width="560" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="20" Spacing="12">
+    <TextBlock Text="{l:Loc Label.UserManagement}" FontSize="16" FontWeight="SemiBold" />
+    <TextBlock Text="{l:Loc Users.Hint}" Opacity="0.6" FontSize="12" TextWrapping="Wrap" />
+
+    <Border BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}"
+            CornerRadius="6" Padding="12">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{l:Loc Users.Empty}" FontSize="13" Opacity="0.7"
+                   IsVisible="{Binding HasNoUser}" />
+
+        <ItemsControl ItemsSource="{Binding Users}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="views:UserRow">
+              <Grid ColumnDefinitions="160,*,90,90" Margin="0,3">
+                <TextBlock Grid.Column="0" Text="{Binding UserName}" FontSize="13"
+                           FontFamily="Consolas,Menlo,monospace" />
+                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="13" />
+                <TextBlock Grid.Column="2" Text="{Binding RoleText}" FontSize="12" Opacity="0.65" />
+                <TextBlock Grid.Column="3" Text="{Binding CreatedText}" FontSize="12" Opacity="0.55" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="{l:Loc Users.Pending}" FontSize="12" Opacity="0.55" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <Button Content="{l:Loc Common.Close}" HorizontalAlignment="Right" Click="OnClose" IsDefault="True" />
+  </StackPanel>
+
+</Window>

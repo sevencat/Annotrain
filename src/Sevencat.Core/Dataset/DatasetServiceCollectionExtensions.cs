@@ -42,6 +42,9 @@ public static class DatasetServiceCollectionExtensions
         services.TryAddSingleton<TinyLabel.TinyLabelImageService>();
         services.TryAddSingleton<TinyLabel.TinyLabelClassService>();
 
+        // Web 端任务流（租约 / 下一张 / 跳过退回 / 标注读写 / 统计）
+        services.TryAddSingleton<TinyLabel.TinyLabelTaskService>();
+
         services.TryAddSingleton<DatasetStoreResolver>();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IDatasetExporter, YoloDatasetExporter>());

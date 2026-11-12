@@ -164,7 +164,8 @@ Sevencat.Label.sln
   src/Sevencat.Core/              跨解决方案契约：存储接口、公共模型、坐标与图像抽象、格式 codec
   src/Sevencat.Label/             标注业务：标注入库、编辑器逻辑、原子写盘、项目浏览与导入
   src/Sevencat.Label.App/         标注程序（exe）：画布、交互、ViewModel、窗口
-  src/Sevencat.Label.Web/         标注 Web：Minimal API + 内嵌页面 + 数据集统计
+  src/Sevencat.Label.Server/      标注 Web 服务端（类库）：Minimal API + 内嵌页面 + 数据集统计
+  src/Sevencat.Label.Web/         标注 Web 前端（Quasar/Vue 3 + TS）：单文件构建，产物内嵌进 Label.Server
   tests/Sevencat.Label.Tests/     格式读写、坐标换算、目录探测
 
 Sevencat.Train.sln
@@ -179,7 +180,7 @@ Sevencat.Train.sln
 
 - `Sevencat.<模块>` 是业务层。`Sevencat.Core`、`Sevencat.Train.Engine`、`Sevencat.Label` **不得引用 Avalonia**。
 - 可执行程序统一叫 `Sevencat.<模块>.App`：`Sevencat.Label.App`、`Sevencat.Train.App`；它们可以引用 Avalonia。
-- Web 项目都是类库，由各自程序进程内启动 HTTP 服务，随主程序启停，不单独部署。
+- Web 后端都是类库（`Sevencat.Label.Server` / `Sevencat.Train.Web`），由各自程序进程内启动 HTTP 服务，随主程序启停，不单独部署；前端源码单独放（`src/Sevencat.Label.Web` 是 Quasar 工程），构建成单文件页面后内嵌进后端。
 - 检测（推理验证）不单独建项目：推理在 `Sevencat.Train.Engine`，页面在 `Sevencat.Train.App`。
 
 ## 快速开始
@@ -199,6 +200,16 @@ dotnet test Sevencat.Train.sln
 ```
 
 数据、配置与日志默认位于 exe 同级的 `data\`（`annotrain.db`、`settings.db`、`logs\`），可用 `--data <目录>` 覆盖。
+
+### 标注 Web 端
+
+标注程序启动时会在进程内拉起标注 Web 服务，只绑本机：<http://127.0.0.1:5180>（顶栏也有「打开」按钮）。
+
+- 账号存在 `data\settings.db` 的 `web_users` 表；首次启动自动建 `admin`，初始密码写在 `data\web-admin.txt`
+  （桌面端「用户管理」里能看到账号列表）。
+- 令牌是 HMAC 自签的，密钥在 `data\web-token.key`，删掉即让所有浏览器下线。
+- `/api/*` 需要 `Authorization: Bearer <token>`，图片走 `?token=`；页面本身不设防，数据全靠 API。
+- 改前端：`cd src/Sevencat.Label.Web && npm run build:server`，再重新 `dotnet build`（页面被 gzip 内嵌进程序集）。
 
 ## 当前状态
 

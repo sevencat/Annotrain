@@ -16,6 +16,9 @@ public sealed record TinyLabelProjectSummary(
     DateTime? ClosedAt,
     IReadOnlyList<string> Splits)
 {
+    /// <summary><c>import</c>（图片复制进项目目录）或 <c>scan</c>（引用原图）；Web 端原样透传。</summary>
+    public string StorageMode { get; init; } = "import";
+
     /// <summary>已结束（归档）的项目在列表里沉到下方。</summary>
     public bool IsClosed => ClosedAt is not null;
 
@@ -99,7 +102,10 @@ public sealed class TinyLabelProjectCatalog(
                 pending,
                 project.CreatedAt,
                 project.ClosedAt,
-                splits));
+                splits)
+            {
+                StorageMode = project.StorageMode,
+            });
         }
 
         // 未结束优先，其次按创建时间倒序（与服务端列表一致）

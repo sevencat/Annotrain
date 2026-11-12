@@ -35,7 +35,7 @@
 
     <!-- 顶栏 -->
     <Border Grid.Row="0" Classes="card" Padding="12,8">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="10">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="{l:Loc Label.Title}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
           <Border CornerRadius="9" Padding="8,1" Background="#1F16A34A" VerticalAlignment="Center">
@@ -43,10 +43,14 @@
           </Border>
         </StackPanel>
 
-        <TextBlock Grid.Column="1" Text="{Binding DataDirectory}" Margin="8,0"
-                   VerticalAlignment="Center" Opacity="0.6" FontSize="12"
-                   TextTrimming="CharacterEllipsis"
-                   ToolTip.Tip="{Binding DatabasePath}" />
+        <!-- Web 端入口：端口 + 可打开的地址 + 打开（服务端随 M3 落地，先给出口子） -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="8,0"
+                    VerticalAlignment="Center">
+          <TextBlock Text="{Binding WebPortText}" FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding WebUrl}" FontSize="12" Opacity="0.75" VerticalAlignment="Center"
+                     FontFamily="Consolas,Menlo,monospace" TextTrimming="CharacterEllipsis" />
+          <Button Content="{l:Loc Label.OpenWeb}" Padding="10,2" FontSize="12" Click="OnOpenWeb" />
+        </StackPanel>
 
         <ComboBox Grid.Column="2" x:Name="LanguageBox"
                   ItemsSource="{Binding Languages}"
@@ -60,8 +64,9 @@
           </ComboBox.ItemTemplate>
         </ComboBox>
 
-        <Button Grid.Column="3" Content="{l:Loc Label.OpenDataDir}" Click="OnOpenWorkspace" />
-        <Button Grid.Column="4" Content="{l:Loc Common.Refresh}" Click="OnRefresh" />
+        <Button Grid.Column="3" Content="{l:Loc Label.UserManagement}" Click="OnUserManagement" />
+        <Button Grid.Column="4" Content="{l:Loc Label.OpenDataDir}" Click="OnOpenDataFolder" />
+        <Button Grid.Column="5" Content="{l:Loc Label.About}" Click="OnAbout" />
       </Grid>
     </Border>
 
@@ -197,10 +202,15 @@
       </Grid>
     </Grid>
 
-    <!-- 底栏：数据库位置 + 日志（默认收起） -->
+    <!-- 底栏：数据库位置（可切换数据目录） + 日志（默认收起） -->
     <Grid Grid.Row="2" RowDefinitions="Auto,Auto" RowSpacing="4">
-      <TextBlock Grid.Row="0" Text="{Binding DatabasePath}" FontSize="12" Opacity="0.55"
-                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DatabasePath}" />
+      <DockPanel Grid.Row="0">
+        <Button DockPanel.Dock="Right" Classes="card" Margin="8,0,0,0"
+                Content="{l:Loc Label.SwitchDataDir}" Click="OnPickDataFolder" />
+        <TextBlock Text="{Binding DatabasePath}" FontSize="12" Opacity="0.55"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DatabasePath}" />
+      </DockPanel>
       <Expander Grid.Row="1" Header="{l:Loc Label.Log}" IsExpanded="False" FontSize="12">
         <TextBox Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True"
                  FontFamily="Consolas,Menlo,monospace" FontSize="11" Height="160"

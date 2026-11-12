@@ -45,9 +45,10 @@
 | `TinyLabel.App/ViewModels/*`、`Views/*` | `Sevencat.Label.App` | 去掉远端工作区逻辑后再搬 |
 | `TinyLabel.App/Infrastructure/*` | `Sevencat.Label.App` | 原样（配置、路径、DI 扩展） |
 | `TinyLabel.App/Services/BitmapConverter.cs`、`ThemeService.cs` | `Sevencat.Label.App` | 原样 |
-| `TinyLabel.Server/ServerHost.cs`、`ServerOptions.cs`、`NLogConfig.cs` | `Sevencat.Label.Web` | 类库化，由桌面端调用 |
-| `TinyLabel.Server/Data/*`、`Endpoints/*`、`Security/*`、`Services/*`、`Web/*` | `Sevencat.Label.Web` | 服务逻辑改走 Core 接口，不直接读文件 |
-| `TinyLabel.Shared/ProjectContracts.cs`、`PagingContracts.cs`、`StatsContracts.cs`、`AuthContracts.cs` | `Sevencat.Label.Web` | 作为 API DTO |
+| `TinyLabel.Server/ServerHost.cs`、`ServerOptions.cs`、`NLogConfig.cs` | `Sevencat.Label.Server` | 类库化，由桌面端调用 |
+| `TinyLabel.Server/Data/*`、`Endpoints/*`、`Security/*`、`Services/*`、`Web/*` | `Sevencat.Label.Server` | 服务逻辑改走 Core 接口，不直接读文件 |
+| `TinyLabel.Shared/ProjectContracts.cs`、`PagingContracts.cs`、`StatsContracts.cs`、`AuthContracts.cs` | `Sevencat.Label.Server` | 作为 API DTO |
+| `web/*`（Quasar + Vue 3 + TS 前端） | `src/Sevencat.Label.Web` | 原样移植，只改品牌与本地键；构建成单文件页面内嵌进 `Sevencat.Label.Server` |
 | `TinyLabel.Shared/MaskContour.cs`、`MaskRasterizer.cs`、`App/Services/MaskConverter.cs` | 不迁移 | 分割功能，首版不做 |
 | `TinyLabel.Server/ViewModels/*`、`Views/*` | 不迁移 | 原为 Avalonia 管理端，改为网页 |
 
