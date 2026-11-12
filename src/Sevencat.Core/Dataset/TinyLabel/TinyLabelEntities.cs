@@ -39,6 +39,9 @@ public sealed class ProjectEntity
 
 /// <summary>图片清单。二进制不进库：只存路径、尺寸与 sha256。</summary>
 [Table(Name = "images")]
+// 同一项目里 FilePath 唯一（导入去重靠它）；按项目 + 状态筛选是清单页最常用的查询
+[Index("uk_images_project_path", "ProjectId,FilePath", true)]
+[Index("idx_images_project_state", "ProjectId,State")]
 public sealed class ImageEntity
 {
     [Column(IsPrimary = true, IsIdentity = true, IsNullable = false)]
@@ -146,6 +149,8 @@ public sealed class AnnotationEntity
 /// 删除类别只做逻辑删除才能保住历史导出的索引含义。
 /// </summary>
 [Table(Name = "project_classes")]
+// 同一项目里类别名唯一
+[Index("uk_project_classes_name", "ProjectId,Name", true)]
 public sealed class ProjectClassEntity
 {
     [Column(IsPrimary = true, IsIdentity = true, IsNullable = false)]

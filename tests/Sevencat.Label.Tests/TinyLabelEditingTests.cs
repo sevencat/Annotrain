@@ -42,6 +42,40 @@ public class TinyLabelEditingTests
     }
 
     [Fact]
+    public async Task CreateProject_MakesProjectFolder_UnderIdPrefix()
+    {
+        using var workspace = new TestWorkspace();
+        using ServiceProvider provider = BuildProvider();
+
+        var projects = provider.GetRequiredService<TinyLabelProjectService>();
+        StorageLocation root = StorageLocation.FromPath(workspace.Root);
+
+        TinyLabelWorkspace.EnsureDatabase(root);
+
+        long projectId = await projects.CreateAsync(root, "带目录的项目");
+
+        // 目录名必须是 projects/{id}，创建时就存在（不用等第一次导图）
+        string expected = Path.Combine(workspace.Root, TinyLabelWorkspace.ProjectsFolderName, projectId.ToString());
+        Assert.True(Directory.Exists(expected), $"项目目录应该已建好：{expected}");
+        Assert.Equal($"projects/{projectId}", TinyLabelWorkspace.ProjectPrefix(projectId));
+        Assert.Equal(expected, TinyLabelWorkspace.ProjectDirectory(root, projectId));
+
+        // 原图与缩略图分目录：projects/{id}/images 与 projects/{id}/thumbs
+        Assert.Equal(
+            Path.Combine(expected, TinyLabelWorkspace.ImagesFolderName),
+            TinyLabelWorkspace.ImageDirectory(root, projectId));
+        Assert.Equal(
+            Path.Combine(expected, TinyLabelWorkspace.ThumbsFolderName),
+            TinyLabelWorkspace.ThumbDirectory(root, projectId));
+        Assert.True(Directory.Exists(TinyLabelWorkspace.ImageDirectory(root, projectId)));
+        Assert.True(Directory.Exists(TinyLabelWorkspace.ThumbDirectory(root, projectId)));
+
+        // 删项目时目录一起走
+        await projects.DeleteAsync(root, projectId, deleteImages: true);
+        Assert.False(Directory.Exists(expected));
+    }
+
+    [Fact]
     public async Task Images_QueryImportAndClasses_Work()
     {
         using var workspace = new TestWorkspace();
@@ -134,6 +168,8 @@ public class TinyLabelEditingTests
         }
 
         // 导入图片进新项目：从磁盘复制一张，跳过重复
+        // 一个进程只有一个当前库：下面换到 workspace 根目录测，先把 dataset 那个放掉（只有测试会这么做）
+        TinyLabelDatabase.Reset();
         TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(workspace.Root));
         long emptyProject = await projects.CreateAsync(StorageLocation.FromPath(workspace.Root), "空项目");
         string sample = Path.Combine(datasetRoot, "projects", project.Id.ToString());
@@ -146,7 +182,11 @@ public class TinyLabelEditingTests
             split: "train");
 
         Assert.Equal(1, report.Imported);
-        Assert.True(File.Exists(Path.Combine(workspace.Root, "projects", emptyProject.ToString(), Path.GetFileName(source))));
+
+        // 原图落在 projects/{id}/images/，缩略图目录 projects/{id}/thumbs/ 同时建好
+        string projectFolder = Path.Combine(workspace.Root, "projects", emptyProject.ToString());
+        Assert.True(File.Exists(Path.Combine(projectFolder, TinyLabelWorkspace.ImagesFolderName, Path.GetFileName(source))));
+        Assert.True(Directory.Exists(Path.Combine(projectFolder, TinyLabelWorkspace.ThumbsFolderName)));
 
         // 同一张再导一次：按 sha256 去重
         TinyLabelImageImportReport again = await images.ImportFilesAsync(

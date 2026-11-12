@@ -223,7 +223,12 @@ public sealed class TinyLabelDatasetStoreProvider(ILoggerFactory? loggerFactory 
         }
 
         string dbPath = ResolveDatabasePath(probe);
-        TinyLabelDatabase db = TinyLabelDatabase.Open(dbPath, createIfMissing: false);
+
+        // 就是当前工作库时直接用（store 关闭不会关掉它）；导入/导出只碰当前库，
+        // 会走到 Open 的只有"打开外部数据集"那种场景（训练端选目录、造模拟数据）。
+        TinyLabelDatabase db = string.Equals(dbPath, TinyLabelDatabase.CurrentPath, StringComparison.OrdinalIgnoreCase)
+            ? TinyLabelDatabase.Current
+            : TinyLabelDatabase.Open(dbPath, createIfMissing: false);
 
         try
         {

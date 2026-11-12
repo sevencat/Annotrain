@@ -17,11 +17,10 @@ public sealed class DatabaseAnnotationStore : IAnnotationStore, IDisposable
     private readonly ClassCatalog _classes;
     private readonly LabelmeCodec _codec = new();
 
-    public DatabaseAnnotationStore(string databasePath, long projectId)
+    /// <summary>标注窗口用当前工作库（<see cref="TinyLabelDatabase.Current"/>），不再传路径。</summary>
+    public DatabaseAnnotationStore(long projectId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
-
-        _db = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        _db = TinyLabelDatabase.Current;
         _projectId = projectId;
         _classes = _db.LoadClasses(projectId);
     }

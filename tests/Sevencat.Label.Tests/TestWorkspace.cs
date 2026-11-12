@@ -1,3 +1,9 @@
+using Sevencat.Core.Dataset.TinyLabel;
+using Xunit;
+
+// 当前工作库是进程内唯一实例，测试之间不能并行（否则会互相把 Current 指到别的临时目录）
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Sevencat.Label.Tests;
 
 /// <summary>临时目录夹具：测试结束自动清理。</summary>
@@ -29,6 +35,9 @@ public sealed class TestWorkspace : IDisposable
 
     public void Dispose()
     {
+        // 当前工作库是进程内唯一实例，删临时目录前先丢掉它（只有测试会这么做）
+        TinyLabelDatabase.Reset();
+
         try
         {
             Directory.Delete(Root, recursive: true);

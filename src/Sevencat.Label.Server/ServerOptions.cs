@@ -23,9 +23,6 @@ public sealed class ServerOptions
     /// <summary>令牌签名密钥文件（首次启动生成）。</summary>
     public string TokenKeyPath => Path.Combine(DataDirectory, "web-token.key");
 
-    /// <summary>Web 账号库：跟桌面端配置共用 <c>settings.db</c>（表 <c>web_users</c>）。</summary>
-    public string UsersDatabasePath => Path.Combine(DataDirectory, "settings.db");
-
     /// <summary>首次启动生成的初始密码落在这里，便于找回来。</summary>
     public string BootstrapPasswordPath => Path.Combine(DataDirectory, "web-admin.txt");
 }

@@ -259,6 +259,26 @@ public class DatasetImportTests
             StorageLocation.FromPath(workspace.Root))));
     }
 
+    [Fact]
+    public async Task Import_RejectsTargetInAnotherDatabase()
+    {
+        using var workspace = new TestWorkspace();
+        using var source = new TestWorkspace();
+        using var other = new TestWorkspace();
+
+        WriteYoloDataset(source);
+
+        // 当前库启动时就定了：导入只能写它，不能借 Destination 另开一个库
+        TinyLabelDatabase.Initialize(Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile));
+
+        using ServiceProvider provider = BuildProvider();
+        var importer = provider.GetRequiredService<DatasetImportService>();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => importer.ImportAsync(new DatasetImportOptions(
+            StorageLocation.FromPath(source.Root),
+            StorageLocation.FromPath(other.Root))));
+    }
+
     // ── 造数据 ────────────────────────────────────────────────────────────────
 
     /// <summary>4 张 96x72 的 PNG：前 2 张 train、后 2 张 val；返回标注框总数。</summary>

@@ -1,7 +1,9 @@
+using FreeSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NLog.Extensions.Logging;
 using Sevencat.Core.Dataset;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure.Logging;
 
 namespace Sevencat.Core.Infrastructure;
@@ -18,8 +20,10 @@ public static class CoreServiceCollectionExtensions
         var buffer = new LogBuffer();
         services.AddSingleton(buffer);
 
-        // 配置进数据库：data/settings.db（与项目库同目录，整个 data 目录可整体拷走）
-        services.AddSingleton(_ => new SettingsStore(AppDataPaths.SettingsDatabasePath));
+        // 库是进程级单例：各入口启动时先 TinyLabelDatabase.Initialize（文件不在就建空库），
+        // 这里只把它的 IFreeSql 注册出去——配置、账号、项目共用同一个连接池，不各开各的
+        services.AddSingleton(_ => TinyLabelDatabase.Current.Orm);
+        services.AddSingleton<SettingsStore>();
         services.AddSingleton(provider => provider.GetRequiredService<SettingsStore>().Load());
 
         NLogSetup.Configure(buffer, AppPaths.LogDirectory, applicationName);

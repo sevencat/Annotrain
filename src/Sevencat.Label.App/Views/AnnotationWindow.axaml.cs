@@ -1,360 +1,71 @@
-using System.Runtime.InteropServices;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
-using Sevencat.Core.Annotation;
-using Sevencat.Core.AutoLabel;
-using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
-using Sevencat.Core.Localization;
-using Sevencat.Core.Model;
-using Sevencat.Core.Storage;
-using Sevencat.Label.App.Controls;
 using Sevencat.Label.App.ViewModels;
 
 namespace Sevencat.Label.App.Views;
 
 /// <summary>
-/// 单图标注对话框：画矩形框、AI 预标注、保存回 <c>annotations.DocJson</c>。
-/// 参考 TinyLabel 的「列表 → 点进一张 → 标完关闭 / 保存并继续」。
+/// 单图标注对话框：界面与交互照 TinyLabel 的标注窗口，加载/保存在
+/// <see cref="AnnotationViewModel"/> 里完成，这里只负责挂画布、适窗和释放图片句柄。
+/// 「保存并继续」不关窗口，直接把画布换成队列里的下一张（<see cref="AnnotationTarget"/>）。
 /// </summary>
 public partial class AnnotationWindow : Window
 {
-    private readonly DatabaseAnnotationStore _store;
-    private readonly IBlobStore _blobStore;
-    private readonly ImageRef _image;
-    private IReadOnlyList<string> _classes = [];
-    private readonly AppSettings _settings;
-    private readonly SettingsStore _settingsStore;
+    private readonly AnnotationViewModel? _viewModel;
 
-    private string _displayName = string.Empty;
-    private readonly int _imageWidth;
-    private readonly int _imageHeight;
-
-    private Bitmap? _bitmap;
-    private IAutoLabelRunner? _runner;
-    private string _runnerModel = string.Empty;
+    /// <summary>窗口关掉后主界面据此把列表落回最后标的那张。</summary>
+    public long? LastImageId => _viewModel?.LastImageId;
 
     /// <summary>XAML 预览用。</summary>
     public AnnotationWindow()
     {
         InitializeComponent();
-
-        _store = null!;
-        _blobStore = null!;
-        _image = null!;
-        _classes = [];
-        _settings = new AppSettings();
-        _settingsStore = null!;
     }
 
-    /// <summary>从图片清单的一行打开（主界面用）。</summary>
+    /// <summary>从图片清单打开（主界面用）：<paramref name="targets"/> 是这一轮要连续标的图，第一个就是起点。</summary>
     public AnnotationWindow(
-        string databasePath,
         long projectId,
-        TinyLabelImageRow row,
+        IReadOnlyList<AnnotationTarget> targets,
         IReadOnlyList<string> classes,
-        IBlobStore blobStore,
         AppSettings settings,
         SettingsStore settingsStore) : this()
     {
-        _store = new DatabaseAnnotationStore(databasePath, projectId);
-        _blobStore = blobStore;
-        _settings = settings;
-        _settingsStore = settingsStore;
+        _viewModel = new AnnotationViewModel(
+            projectId,
+            targets,
+            classes,
+            settings,
+            settingsStore);
 
-        string? directory = Path.GetDirectoryName(row.FilePath);
-        _image = new ImageRef(
-            Path.GetFileName(row.FilePath),
-            StorageLocation.FromPath(string.IsNullOrEmpty(directory) ? "." : directory));
-
-        _displayName = row.FileName;
-        _imageWidth = row.Width;
-        _imageHeight = row.Height;
-
-        Configure(classes);
-    }
-
-    private void Configure(IReadOnlyList<string> classes)
-    {
-        _classes = classes;
-
-        FileText.Text = _displayName;
-        Title = Localizer.Instance.Get("Annotate.Title");
-        AcceptConfidentButton.Content = Localizer.Instance.Format("Annotate.AcceptConfident", 0.5);
-
-        string[] labels = classes.Count > 0 ? [.. classes] : ["object"];
-        LabelBox.ItemsSource = labels;
-        LabelBox.SelectedIndex = 0;
-
-        Board.ActiveLabelProvider = () => string.IsNullOrWhiteSpace(LabelBox.Text)
-            ? labels[0]
-            : LabelBox.Text.Trim();
-
-        Board.ShapesChanged += (_, _) => UpdateHint();
-        Board.Tool = CanvasTool.Select;
+        _viewModel.CloseRequested = outcome => Close(outcome);
+        DataContext = _viewModel;
     }
 
     protected override async void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-        await LoadAsync();
-    }
 
-    private async Task LoadAsync()
-    {
-        try
-        {
-            await using Stream input = await _blobStore
-                .OpenReadAsync(new StorageKey(_image.Location, _image.RelativePath))
-                .ConfigureAwait(true);
-
-            using var buffer = new MemoryStream();
-            await input.CopyToAsync(buffer).ConfigureAwait(true);
-            buffer.Position = 0;
-
-            _bitmap = new Bitmap(buffer);
-            Board.Source = _bitmap;
-
-            AnnotationEnvelope? envelope = await _store.LoadAsync(_image).ConfigureAwait(true);
-            Board.SetShapes(envelope?.Document.Shapes ?? []);
-
-            UpdateHint();
-        }
-        catch (Exception error)
-        {
-            HintText.Text = Localizer.Instance.Format("Annotate.LoadFailed", error.Message);
-        }
-    }
-
-    private void UpdateHint()
-    {
-        Localizer loc = Localizer.Instance;
-
-        string model = string.IsNullOrWhiteSpace(_settings.AutoLabelModelPath)
-            ? loc.Get("Annotate.NoModel")
-            : Path.GetFileName(_settings.AutoLabelModelPath);
-
-        HintText.Text = loc.Format(
-            "Annotate.Hint",
-            _displayName,
-            _imageWidth,
-            _imageHeight,
-            Board.Shapes.Count,
-            model);
-    }
-
-    // ── 工具 ──────────────────────────────────────────────────────────────────
-
-    private void OnSelectTool(object? sender, RoutedEventArgs e)
-    {
-        Board.Tool = CanvasTool.Select;
-        SelectTool.IsChecked = true;
-        RectTool.IsChecked = false;
-    }
-
-    private void OnRectTool(object? sender, RoutedEventArgs e)
-    {
-        Board.Tool = CanvasTool.Rectangle;
-        RectTool.IsChecked = true;
-        SelectTool.IsChecked = false;
-    }
-
-    private void OnFit(object? sender, RoutedEventArgs e) => Board.FitToWindow();
-
-    private void OnDelete(object? sender, RoutedEventArgs e)
-    {
-        if (!Board.DeleteSelected())
-        {
-            HintText.Text = Localizer.Instance.Get("Annotate.DeleteHint");
-        }
-    }
-
-    // ── AI 标注 ───────────────────────────────────────────────────────────────
-
-    private async void OnAutoLabelOptions(object? sender, RoutedEventArgs e)
-    {
-        var dialog = new AutoLabelOptionsWindow(_settings.AutoLabelModelPath, _settings.AutoLabelConfidence);
-
-        if (!await dialog.ShowDialog<bool>(this) || dialog.Result is null)
+        if (_viewModel is null)
         {
             return;
         }
 
-        _settings.AutoLabelModelPath = dialog.Result.ModelPath;
-        _settings.AutoLabelConfidence = dialog.Result.Confidence;
-        SaveSettings();
-
-        UpdateHint();
+        // 画布是自绘控件，历史栈与选中都在控件里：挂上之后再加载图片
+        _viewModel.Attach(Canvas, this);
+        await _viewModel.InitializeAsync();
+        Canvas.FitToWindow();
     }
-
-    private async void OnAutoLabel(object? sender, RoutedEventArgs e)
-    {
-        if (_bitmap is null)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_settings.AutoLabelModelPath))
-        {
-            HintText.Text = Localizer.Instance.Get("Annotate.AINoModel");
-            return;
-        }
-
-        HintText.Text = Localizer.Instance.Get("Annotate.AIRunning");
-
-        try
-        {
-            IAutoLabelRunner runner = GetRunner(_settings.AutoLabelModelPath);
-            byte[] bgra = ToBgra(_bitmap, out int width, out int height);
-
-            var options = new AutoLabelOptions(
-                _settings.AutoLabelModelPath,
-                _settings.AutoLabelConfidence,
-                ClassNames: _classes.Count > 0 ? _classes : null);
-
-            IReadOnlyList<AutoLabelCandidate> candidates =
-                await Task.Run(() => runner.Predict(bgra, width, height, options)).ConfigureAwait(true);
-
-            Board.SetCandidates(candidates);
-            CandidateBar.IsVisible = candidates.Count > 0;
-            CandidateText.Text = Localizer.Instance.Format("Annotate.Candidates", candidates.Count);
-
-            HintText.Text = Localizer.Instance.Get(candidates.Count == 0
-                ? "Annotate.NoCandidatesHint"
-                : "Annotate.CandidateHint");
-        }
-        catch (Exception error)
-        {
-            _runner?.Dispose();
-            _runner = null;
-            _runnerModel = string.Empty;
-            CandidateBar.IsVisible = false;
-            HintText.Text = Localizer.Instance.Format("Annotate.AIFailed", error.Message);
-        }
-    }
-
-    private void OnAcceptAll(object? sender, RoutedEventArgs e) => AcceptCandidates(0);
-
-    private void OnAcceptConfident(object? sender, RoutedEventArgs e) => AcceptCandidates(0.5);
-
-    private void AcceptCandidates(double minScore)
-    {
-        int accepted = Board.AcceptCandidates(minScore);
-
-        CandidateBar.IsVisible = false;
-        UpdateHint();
-        HintText.Text = Localizer.Instance.Format("Annotate.Accepted", accepted);
-    }
-
-    private void OnDiscardCandidates(object? sender, RoutedEventArgs e)
-    {
-        Board.ClearCandidates();
-        CandidateBar.IsVisible = false;
-        UpdateHint();
-    }
-
-    private IAutoLabelRunner GetRunner(string modelPath)
-    {
-        if (_runner is not null && string.Equals(_runnerModel, modelPath, StringComparison.OrdinalIgnoreCase))
-        {
-            return _runner;
-        }
-
-        _runner?.Dispose();
-        _runner = new YoloOnnxRunner(modelPath);
-        _runnerModel = modelPath;
-        return _runner;
-    }
-
-    private void SaveSettings()
-    {
-        try
-        {
-            _settingsStore.Save(_settings);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            HintText.Text = Localizer.Instance.Format("Annotate.SettingsSaveFailed", error.Message);
-        }
-    }
-
-    /// <summary>Avalonia 的 <see cref="Bitmap"/> 复制成 BGRA 字节，交给 Core 做推理前处理。</summary>
-    private static byte[] ToBgra(Bitmap bitmap, out int width, out int height)
-    {
-        width = (int)bitmap.PixelSize.Width;
-        height = (int)bitmap.PixelSize.Height;
-
-        int stride = width * 4;
-        byte[] bytes = new byte[stride * height];
-
-        GCHandle handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-
-        try
-        {
-            bitmap.CopyPixels(new Avalonia.PixelRect(0, 0, width, height), handle.AddrOfPinnedObject(), bytes.Length, stride);
-        }
-        finally
-        {
-            handle.Free();
-        }
-
-        return bytes;
-    }
-
-    // ── 保存 ──────────────────────────────────────────────────────────────────
-
-    private async void OnSave(object? sender, RoutedEventArgs e)
-    {
-        if (await SaveAsync().ConfigureAwait(true))
-        {
-            Close(AnnotationOutcome.Saved);
-        }
-    }
-
-    private async void OnSaveAndNext(object? sender, RoutedEventArgs e)
-    {
-        if (await SaveAsync().ConfigureAwait(true))
-        {
-            Close(AnnotationOutcome.SavedAndContinue);
-        }
-    }
-
-    private async Task<bool> SaveAsync()
-    {
-        try
-        {
-            var document = new AnnotationDocument
-            {
-                ImagePath = _image.RelativePath,
-                ImageWidth = _imageWidth,
-                ImageHeight = _imageHeight,
-                Shapes = Board.Shapes,
-                Meta = new DocumentMeta
-                {
-                    Id = IdGenerator.NewId(),
-                    Revision = 1,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                },
-            };
-
-            await _store.SaveAsync(_image, document).ConfigureAwait(true);
-            return true;
-        }
-        catch (Exception error)
-        {
-            HintText.Text = Localizer.Instance.Format("Annotate.SaveFailed", error.Message);
-            return false;
-        }
-    }
-
-    private void OnClose(object? sender, RoutedEventArgs e) => Close(AnnotationOutcome.Cancelled);
 
     protected override void OnClosed(EventArgs e)
     {
-        _runner?.Dispose();
-        _store?.Dispose();
         base.OnClosed(e);
+
+        // Bitmap 会占着原图文件，窗口关掉就释放
+        _viewModel?.Shutdown();
     }
+
+    private void OnFitToWindow(object? sender, RoutedEventArgs e) => Canvas.FitToWindow();
+
+    private void OnClose(object? sender, RoutedEventArgs e) => Close(AnnotationOutcome.Cancelled);
 }

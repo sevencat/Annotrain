@@ -25,7 +25,8 @@ public sealed class TinyLabelClassService(
         long projectId,
         CancellationToken ct = default)
     {
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         IReadOnlyList<TinyLabelClassRow> rows = [.. database.Orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId)
@@ -47,7 +48,8 @@ public sealed class TinyLabelClassService(
         CancellationToken ct = default)
     {
         string trimmed = Validate(name);
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         bool exists = database.Orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId && row.Name == trimmed)
@@ -92,7 +94,8 @@ public sealed class TinyLabelClassService(
         CancellationToken ct = default)
     {
         string trimmed = Validate(name);
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         bool duplicated = database.Orm.Select<ProjectClassEntity>()
             .Where(row => row.ProjectId == projectId && row.Name == trimmed && row.Id != classId)
@@ -128,7 +131,8 @@ public sealed class TinyLabelClassService(
         long classId,
         CancellationToken ct = default)
     {
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         ProjectClassEntity entity = database.Orm.Select<ProjectClassEntity>()
             .Where(row => row.Id == classId && row.ProjectId == projectId)
@@ -171,17 +175,5 @@ public sealed class TinyLabelClassService(
         return trimmed.Length is 7 && trimmed[0] == '#'
             ? trimmed.ToUpperInvariant()
             : "#3B82F6";
-    }
-
-    private static TinyLabelDatabase Open(StorageLocation root)
-    {
-        if (!root.IsFile)
-        {
-            throw new NotSupportedException(Text.Get("Error.DatabaseRequiresLocalFolder"));
-        }
-
-        string databasePath = Path.Combine(root.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
-
-        return TinyLabelDatabase.Open(databasePath, createIfMissing: false);
     }
 }

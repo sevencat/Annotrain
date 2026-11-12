@@ -28,6 +28,20 @@ public sealed class ProjectSummaryViewModel(TinyLabelProjectSummary summary)
 
     public string CreatedText => Summary.CreatedText;
 
+    /// <summary>「创建 2026-11-12」。</summary>
+    public string CreatedLabel => Loc.Format("Label.ProjectCreatedAt", CreatedText);
+
+    /// <summary>列表第二行的「图片 N」，与「已标注 M」分两列显示。</summary>
+    public int ImageCount => Summary.ImageCount;
+
+    public int LabeledCount => Summary.LabeledCount;
+
+    /// <summary>「图片 14」。</summary>
+    public string ImageCountText => Loc.Format("Label.ProjectImageCount", ImageCount);
+
+    /// <summary>「已标注 9」。</summary>
+    public string LabeledCountText => Loc.Format("Label.ProjectLabeledCount", LabeledCount);
+
     public bool IsClosed => Summary.IsClosed;
 
     public string Splits => Summary.Splits.Count == 0
@@ -35,6 +49,12 @@ public sealed class ProjectSummaryViewModel(TinyLabelProjectSummary summary)
         : string.Join(" / ", Summary.Splits);
 
     public double Progress => Summary.Progress;
+
+    /// <summary>搜索用：名称 / 备注 / Id 任一命中即可（大小写不敏感）。</summary>
+    public bool Matches(string token)
+        => Name.Contains(token, StringComparison.OrdinalIgnoreCase)
+           || (Summary.Description?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
+           || Id.ToString(System.Globalization.CultureInfo.InvariantCulture).Contains(token, StringComparison.Ordinal);
 }
 
 /// <summary>导入对话框的返回值：源目录 + 项目名 + 已识别形态。</summary>

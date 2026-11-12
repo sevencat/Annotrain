@@ -25,8 +25,18 @@ public sealed class AnnotationCanvas : Control
     public static readonly StyledProperty<IImage?> SourceProperty =
         AvaloniaProperty.Register<AnnotationCanvas, IImage?>(nameof(Source));
 
+    /// <summary>画布底色：浅色（图片外边留白，别用深色抢眼）。</summary>
+    public static readonly StyledProperty<IBrush?> BackgroundProperty =
+        AvaloniaProperty.Register<AnnotationCanvas, IBrush?>(
+            nameof(Background),
+            new SolidColorBrush(Color.FromRgb(0xF2, 0xF3, 0xF7)));
+
     private readonly List<Shape> _shapes = [];
     private readonly List<AutoLabelCandidate> _candidates = [];
+
+    /// <summary>撤销/重做栈：每条是「改动前的形状快照」，形状本身不可变，直接存列表副本。</summary>
+    private readonly List<List<Shape>> _undo = [];
+    private readonly List<List<Shape>> _redo = [];
 
     private double _zoom = 1;
     private Point _origin;
@@ -45,7 +55,7 @@ public sealed class AnnotationCanvas : Control
 
     static AnnotationCanvas()
     {
-        AffectsRender<AnnotationCanvas>(SourceProperty);
+        AffectsRender<AnnotationCanvas>(SourceProperty, BackgroundProperty);
         FocusableProperty.OverrideDefaultValue<AnnotationCanvas>(true);
     }
 
@@ -69,6 +79,13 @@ public sealed class AnnotationCanvas : Control
         set => SetValue(SourceProperty, value);
     }
 
+    /// <summary>画布底色。</summary>
+    public IBrush? Background
+    {
+        get => GetValue(BackgroundProperty);
+        set => SetValue(BackgroundProperty, value);
+    }
+
     /// <summary>当前全部框（原图像素坐标）。每次读取返回副本，改动用 <see cref="SetShapes"/>。</summary>
     public IReadOnlyList<Shape> Shapes => [.. _shapes];
 
@@ -83,14 +100,131 @@ public sealed class AnnotationCanvas : Control
 
     public event EventHandler? ShapesChanged;
 
+    /// <summary>选中形状变化（点选、拖动、删除、撤销后）。</summary>
+    public event EventHandler? SelectionChanged;
+
+    /// <summary>撤销/重做可用性变化。</summary>
+    public event EventHandler? HistoryChanged;
+
+    /// <summary>候选框集合变化（重新推理、接受、逐条丢弃）。</summary>
+    public event EventHandler? CandidatesChanged;
+
+    public bool CanUndo => _undo.Count > 0;
+
+    public bool CanRedo => _redo.Count > 0;
+
     public void SetShapes(IEnumerable<Shape> shapes)
     {
         ArgumentNullException.ThrowIfNull(shapes);
 
         _shapes.Clear();
         _shapes.AddRange(shapes);
-        _selected = null;
+        _undo.Clear();
+        _redo.Clear();
+        SetSelected(null);
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
+    }
+
+    /// <summary>把某个形状设为当前选中（列表里点一行也会走这里）。</summary>
+    public void SelectShape(Shape? shape)
+    {
+        if (shape is not null && !_shapes.Contains(shape))
+        {
+            return;
+        }
+
+        SetSelected(shape);
+        InvalidateVisual();
+    }
+
+    /// <summary>改选中形状的类别；返回是否改动。</summary>
+    public bool ChangeLabel(Shape shape, string label)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        ArgumentNullException.ThrowIfNull(label);
+
+        int index = _shapes.IndexOf(shape);
+        if (index < 0 || string.Equals(shape.Label, label, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PushHistory();
+        Shape updated = shape with { Label = label };
+        _shapes[index] = updated;
+
+        if (ReferenceEquals(_selected, shape))
+        {
+            SetSelected(updated);
+        }
+
+        ShapesChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+        return true;
+    }
+
+    // ── 撤销 / 重做 ───────────────────────────────────────────────────────────
+
+    public bool Undo()
+    {
+        if (_undo.Count == 0)
+        {
+            return false;
+        }
+
+        _redo.Add([.. _shapes]);
+        Restore(_undo[^1]);
+        _undo.RemoveAt(_undo.Count - 1);
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    public bool Redo()
+    {
+        if (_redo.Count == 0)
+        {
+            return false;
+        }
+
+        _undo.Add([.. _shapes]);
+        Restore(_redo[^1]);
+        _redo.RemoveAt(_redo.Count - 1);
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    private void Restore(List<Shape> snapshot)
+    {
+        _shapes.Clear();
+        _shapes.AddRange(snapshot);
+        SetSelected(null);
+        ShapesChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
+    private void PushHistory()
+    {
+        _undo.Add([.. _shapes]);
+
+        if (_undo.Count > 64)
+        {
+            _undo.RemoveAt(0);
+        }
+
+        _redo.Clear();
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SetSelected(Shape? shape)
+    {
+        if (ReferenceEquals(_selected, shape))
+        {
+            return;
+        }
+
+        _selected = shape;
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── AI 候选 ───────────────────────────────────────────────────────────────
@@ -104,18 +238,90 @@ public sealed class AnnotationCanvas : Control
 
         _candidates.Clear();
         _candidates.AddRange(candidates);
+        CandidatesChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
     }
 
     public void ClearCandidates()
     {
+        if (_candidates.Count == 0)
+        {
+            return;
+        }
+
         _candidates.Clear();
+        CandidatesChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
+    }
+
+    /// <summary>接受一条候选（画布上双击或右侧列表点勾）：转成正式框并记一次撤销。</summary>
+    public bool AcceptCandidate(AutoLabelCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        int index = IndexOfCandidate(candidate);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        PushHistory();
+
+        _shapes.Add(new Shape
+        {
+            Id = IdGenerator.NewId(),
+            Type = ShapeType.Rectangle,
+            Points = BoxConvert.ToCorners(candidate.Box),
+            Label = candidate.Label,
+        });
+
+        _candidates.RemoveAt(index);
+        ShapesChanged?.Invoke(this, EventArgs.Empty);
+        CandidatesChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>丢掉一条候选（画布上 Delete 或右侧列表点叉）。</summary>
+    public bool RejectCandidate(AutoLabelCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        int index = IndexOfCandidate(candidate);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _candidates.RemoveAt(index);
+        CandidatesChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+        return true;
+    }
+
+    private int IndexOfCandidate(AutoLabelCandidate candidate)
+    {
+        for (int index = 0; index < _candidates.Count; index++)
+        {
+            if (ReferenceEquals(_candidates[index], candidate) || _candidates[index] == candidate)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>把候选按分数过滤后转成正式框，返回接受的条数。</summary>
     public int AcceptCandidates(double minScore = 0)
     {
+        if (_candidates.Count == 0)
+        {
+            return 0;
+        }
+
+        PushHistory();
+
         int accepted = 0;
 
         foreach (AutoLabelCandidate candidate in _candidates)
@@ -143,6 +349,7 @@ public sealed class AnnotationCanvas : Control
             ShapesChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        CandidatesChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
         return accepted;
     }
@@ -154,8 +361,9 @@ public sealed class AnnotationCanvas : Control
             return false;
         }
 
+        PushHistory();
         _shapes.Remove(_selected);
-        _selected = null;
+        SetSelected(null);
         ShapesChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
         return true;
@@ -194,7 +402,7 @@ public sealed class AnnotationCanvas : Control
         base.Render(context);
 
         var bounds = new Rect(Bounds.Size);
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E)), bounds);
+        context.FillRectangle(Background ?? Brushes.Transparent, bounds);
 
         if (Source is not { } image)
         {
@@ -262,7 +470,7 @@ public sealed class AnnotationCanvas : Control
 
         if (selected)
         {
-            context.DrawRectangle(new SolidColorBrush(Colors.White, 0.12), null, screen);
+            context.DrawRectangle(new SolidColorBrush(Colors.Black, 0.06), null, screen);
         }
 
         context.DrawRectangle(null, new Pen(brush, selected ? 3 : 2), screen);
@@ -293,7 +501,7 @@ public sealed class AnnotationCanvas : Control
 
         if (change.Property == SourceProperty)
         {
-            _selected = null;
+            SetSelected(null);
             FitToWindow();
         }
     }
@@ -319,6 +527,7 @@ public sealed class AnnotationCanvas : Control
         if (Tool == CanvasTool.Rectangle)
         {
             ActiveLabel = ResolveLabel();
+            PushHistory();
             _creating = true;
             _createStart = ClampToImage(imagePoint);
             _createCurrent = _createStart;
@@ -329,7 +538,7 @@ public sealed class AnnotationCanvas : Control
         }
 
         Shape? hit = HitTest(imagePoint);
-        _selected = hit;
+        SetSelected(hit);
         InvalidateVisual();
 
         if (hit is null)
@@ -337,6 +546,7 @@ public sealed class AnnotationCanvas : Control
             return;
         }
 
+        PushHistory();
         _moving = true;
         _moveIndex = _shapes.IndexOf(hit);
         _moveOriginal = hit;
@@ -371,7 +581,7 @@ public sealed class AnnotationCanvas : Control
 
         Shape moved = _moveOriginal.Translate(point.X - _moveStart.X, point.Y - _moveStart.Y);
         _shapes[_moveIndex] = moved;
-        _selected = moved;
+        SetSelected(moved);
         InvalidateVisual();
     }
 
@@ -397,7 +607,7 @@ public sealed class AnnotationCanvas : Control
                 };
 
                 _shapes.Add(shape);
-                _selected = shape;
+                SetSelected(shape);
                 ShapesChanged?.Invoke(this, EventArgs.Empty);
             }
 
@@ -441,6 +651,37 @@ public sealed class AnnotationCanvas : Control
     {
         if (e.Key == Key.Delete && DeleteSelected())
         {
+            e.Handled = true;
+            return;
+        }
+
+        bool control = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        if (control && e.Key == Key.Z)
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            {
+                Redo();
+            }
+            else
+            {
+                Undo();
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (control && e.Key == Key.Y)
+        {
+            Redo();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F)
+        {
+            FitToWindow();
             e.Handled = true;
             return;
         }

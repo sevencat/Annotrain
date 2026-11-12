@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Imaging;
 using Sevencat.Core.Localization;
 using Sevencat.Core.Storage;
 using Sevencat.Label.Server.Data;
@@ -10,6 +11,13 @@ namespace Sevencat.Label.Server;
 /// <summary>单张图：元信息、图片字节、租约（claim / release）、跳过 / 退回、标注读写。</summary>
 public static class ImageEndpoints
 {
+    /// <summary>缩略图长边默认像素。</summary>
+    private const int DefaultThumbnailSize = 1024;
+
+    private const int MinThumbnailSize = 32;
+
+    private const int MaxThumbnailSize = 4096;
+
     public static IEndpointRouteBuilder MapImageEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/images/{id:long}", async (
@@ -34,13 +42,16 @@ public static class ImageEndpoints
             BlobStoreRegistry registry,
             CancellationToken ct) => await ReadImageAsync(id, options, tasks, registry, ct));
 
-        // 暂时不缩略：原样返回，前端列表也用同一份字节（后续接 ImageFacade 再压）。
+        // 缩略图：按 ?size=（长边像素，默认 1024）等比缩小后编成 JPEG；原图本来就够小、
+        // 没注册图像后端或解码失败时退回原图字节，保证前端列表永远有图。
         app.MapGet("/api/images/{id:long}/thumb", async (
             long id,
+            int? size,
             ServerOptions options,
             TinyLabelTaskService tasks,
             BlobStoreRegistry registry,
-            CancellationToken ct) => await ReadImageAsync(id, options, tasks, registry, ct));
+            HttpContext context,
+            CancellationToken ct) => await ReadThumbnailAsync(id, size, options, tasks, registry, context, ct));
 
         app.MapPost("/api/images/{id:long}/claim", async (
             long id,
@@ -190,11 +201,64 @@ public static class ImageEndpoints
         StorageLocation root = StorageLocation.FromPath(options.DataDirectory);
         TinyLabelImageTask? task = await tasks.GetAsync(root, id, ct);
 
+        return task is null
+            ? EndpointResults.NotFound("image")
+            : await SendOriginalAsync(id, root, task, registry, ct);
+    }
+
+    /// <summary>
+    /// 缩略图：长边压到 <paramref name="size"/>（默认 1024），等比、不放大，输出 JPEG。
+    /// 生成结果落在项目的 <c>thumbs/</c> 目录（与桌面端共用一份缓存）；远端图或生成失败时退回原图。
+    /// </summary>
+    private static async Task<IResult> ReadThumbnailAsync(
+        long id,
+        int? size,
+        ServerOptions options,
+        TinyLabelTaskService tasks,
+        BlobStoreRegistry registry,
+        HttpContext context,
+        CancellationToken ct)
+    {
+        StorageLocation root = StorageLocation.FromPath(options.DataDirectory);
+        TinyLabelImageTask? task = await tasks.GetAsync(root, id, ct);
+
         if (task is null)
         {
             return EndpointResults.NotFound("image");
         }
 
+        int target = Math.Clamp(size ?? DefaultThumbnailSize, MinThumbnailSize, MaxThumbnailSize);
+
+        string? thumbPath = await ThumbnailCache
+            .EnsureAsync(root, task.ProjectId, task.RelPath, task.FilePath, target, ct)
+            .ConfigureAwait(false);
+
+        if (thumbPath is null)
+        {
+            return await SendOriginalAsync(id, root, task, registry, ct);
+        }
+
+        try
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(thumbPath, ct).ConfigureAwait(false);
+
+            context.Response.Headers.CacheControl = "private, max-age=86400";
+
+            return Results.Bytes(bytes, "image/jpeg");
+        }
+        catch (IOException)
+        {
+            return await SendOriginalAsync(id, root, task, registry, ct);
+        }
+    }
+
+    private static async Task<IResult> SendOriginalAsync(
+        long id,
+        StorageLocation root,
+        TinyLabelImageTask task,
+        BlobStoreRegistry registry,
+        CancellationToken ct)
+    {
         IBlobStore store = registry.Get(root);
         string relative = Path.GetRelativePath(root.Root, task.FilePath).Replace('\\', '/');
 

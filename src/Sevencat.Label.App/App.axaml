@@ -1,11 +1,106 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:themes="clr-namespace:Material.Styles.Themes;assembly=Material.Styles"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Sevencat.Label.App.App"
              RequestedThemeVariant="Default">
 
   <Application.Styles>
-    <themes:MaterialTheme BaseTheme="Light" PrimaryColor="Blue" SecondaryColor="Teal" />
+    <themes:MaterialTheme BaseTheme="Light" PrimaryColor="DeepPurple" SecondaryColor="Teal" />
+    <materialIcons:MaterialIconStyles />
+
+    <!-- 整体字号：正文默认 16，比 Material 默认的 14 大两档 -->
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <!-- 图标按钮：纯图标 + 悬浮提示，宽度固定不随文字变化 -->
+    <Style Selector="Button.icon">
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+    </Style>
+    <!-- 工具切换按钮：与图标按钮同尺寸，未选透明、选中淡蓝底 + 蓝图标 -->
+    <Style Selector="ToggleButton.icon">
+      <Setter Property="Width" Value="38" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+    </Style>
+    <Style Selector="ToggleButton.icon:checked">
+      <Setter Property="Background" Value="#262563EB" />
+      <Setter Property="Foreground" Value="#2563EB" />
+    </Style>
+    <!-- Material 主题在模板里给 :checked 上背景，这里一起改掉 -->
+    <Style Selector="ToggleButton.icon:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="#262563EB" />
+    </Style>
+
+    <!-- 分段按钮组（button group）：一组按钮共用浅底 + 细边，组间用竖线分隔 -->
+    <Style Selector="Border.buttonGroup">
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="Background" Value="#0D000000" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="#14000000" />
+    </Style>
+
+    <!-- 按功能分组配色：图标继承 Button.Foreground，同一组用同一种颜色 -->
+    <Style Selector="Button.icon.accent">
+      <Setter Property="Foreground" Value="#2563EB" />
+    </Style>
+    <Style Selector="Button.icon.success">
+      <Setter Property="Foreground" Value="#16A34A" />
+    </Style>
+    <Style Selector="Button.icon.warn">
+      <Setter Property="Foreground" Value="#EA580C" />
+    </Style>
+    <Style Selector="Button.icon.info">
+      <Setter Property="Foreground" Value="#2563EB" />
+    </Style>
+    <Style Selector="Button.icon.danger">
+      <Setter Property="Foreground" Value="#DC2626" />
+    </Style>
+    <Style Selector="Button.icon.teal">
+      <Setter Property="Foreground" Value="#0D9488" />
+    </Style>
+    <Style Selector="Button.icon.violet">
+      <Setter Property="Foreground" Value="#7C3AED" />
+    </Style>
+    <Style Selector="Button.icon.amber">
+      <Setter Property="Foreground" Value="#D97706" />
+    </Style>
   </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="PanelBorderBrush" Color="#FFE3E3EA" />
+          <SolidColorBrush x:Key="CanvasBackgroundBrush" Color="#FFF2F3F7" />
+        </ResourceDictionary>
+        <!-- 画布固定浅色：图片周围留白，深色主题下也不改 -->
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FF1C1C21" />
+          <SolidColorBrush x:Key="PanelBorderBrush" Color="#FF34343D" />
+          <SolidColorBrush x:Key="CanvasBackgroundBrush" Color="#FFE9EBF0" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
 
 </Application>

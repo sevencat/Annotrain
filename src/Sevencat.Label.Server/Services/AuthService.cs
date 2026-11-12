@@ -3,7 +3,7 @@ using Sevencat.Label.Server.Security;
 
 namespace Sevencat.Label.Server;
 
-/// <summary>登录 / 查当前用户；账号存在 <c>settings.db</c> 的 <c>web_users</c>。</summary>
+/// <summary>登录 / 查当前用户；账号存在 <c>annotrain.db</c> 的 <c>web_users</c>。</summary>
 public sealed class AuthService(WebUserStore users, TokenProtector tokens)
 {
     /// <summary>用户名或密码不对都返回 <c>null</c>，不告诉调用方是哪一项错了。</summary>

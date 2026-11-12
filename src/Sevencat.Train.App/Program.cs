@@ -1,5 +1,6 @@
 using Avalonia;
 using ImageFacade.SkiaSharp;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Imaging;
 using Sevencat.Core.Infrastructure;
 
@@ -18,6 +19,9 @@ internal static class Program
         // --data <目录>：数据根目录（配置库 / 训练产物 / 日志），默认 exe 同级 data
         AppDataPaths.Initialize(AppDataPaths.ReadDataArgument(args));
         AppDataPaths.EnsureCreated();
+
+        // 库（界面配置也在里面）跟着数据目录走：--db / ANNOTRAIN_DB 可另指，文件不在就建空库
+        TinyLabelDatabase.Initialize(AppDataPaths.ResolveDatabasePath(args));
 
         // 图像后端在 exe 入口注册：训练数据管线与界面共用同一个 SkiaSharp 后端。
         ImageRuntime.Use(new SkiaBackend());

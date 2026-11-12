@@ -94,7 +94,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         return Task.FromResult(FindTask(database, imageId));
     }
@@ -114,7 +115,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         DateTime now = DateTime.UtcNow;
 
         List<ImageEntity> candidates = database.Orm.Select<ImageEntity>()
@@ -147,7 +149,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         DateTime now = DateTime.UtcNow;
         ImageEntity row = Require(database, imageId);
 
@@ -169,7 +172,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         database.Orm.Update<ImageEntity>()
             .Where(row => row.Id == imageId && row.LockedBy == userId)
@@ -192,7 +196,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         ImageEntity row = Require(database, imageId);
         DateTime now = DateTime.UtcNow;
 
@@ -222,7 +227,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         Require(database, imageId);
         DateTime now = DateTime.UtcNow;
 
@@ -249,7 +255,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         AnnotationEntity? row = database.Orm.Select<AnnotationEntity>()
             .Where(item => item.ImageId == imageId)
@@ -283,7 +290,8 @@ public sealed class TinyLabelTaskService
             throw new InvalidDataException(Text.Get("Error.LabelFileInvalidJson"), ex);
         }
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         ImageEntity image = Require(database, imageId);
 
         if (image.Revision != expectedRevision)
@@ -344,7 +352,8 @@ public sealed class TinyLabelTaskService
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        using TinyLabelDatabase database = Open(root);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         if (!database.Orm.Select<ProjectEntity>().Where(row => row.Id == projectId).Any())
         {
@@ -449,16 +458,4 @@ public sealed class TinyLabelTaskService
 
     private static string? Trim(string? text)
         => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-
-    private static TinyLabelDatabase Open(StorageLocation root)
-    {
-        if (!root.IsFile)
-        {
-            throw new NotSupportedException(Text.Get("Error.DatabaseRequiresLocalFolder"));
-        }
-
-        string databasePath = Path.Combine(root.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
-
-        return TinyLabelDatabase.Open(databasePath, createIfMissing: false);
-    }
 }

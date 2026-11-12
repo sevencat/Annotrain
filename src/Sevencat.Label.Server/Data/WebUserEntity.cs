@@ -3,7 +3,7 @@ using FreeSql.DataAnnotations;
 namespace Sevencat.Label.Server.Data;
 
 /// <summary>
-/// Web 账号：与桌面端配置库（<c>settings.db</c>）同库不同表，桌面端不建模，
+/// Web 账号：与项目库、桌面端配置同在 <c>annotrain.db</c> 里不同表，桌面端不建模，
 /// 由本程序首次启动时 <c>SyncStructure</c> 建表。
 /// </summary>
 [Table(Name = "web_users")]

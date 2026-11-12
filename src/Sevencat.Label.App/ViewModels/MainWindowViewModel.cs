@@ -7,6 +7,7 @@ using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.Export;
 using Sevencat.Core.Dataset.Import;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Imaging;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Infrastructure.Logging;
 using Sevencat.Core.Localization;
@@ -27,7 +28,7 @@ namespace Sevencat.Label.App.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     /// <summary>图片清单每页条数。</summary>
-    public const int DefaultPageSize = 50;
+    public const int DefaultPageSize = 20;
 
     /// <summary>标注 Web 端地址（解析一次，端口从里面取）。</summary>
     private static readonly Uri WebAddress = new(LabelWebModule.DefaultUrl);
@@ -45,6 +46,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>切项目时的代次：异步加载回来发现已经切走就丢弃结果。</summary>
     private int _loadVersion;
+
+    /// <summary>正在重建项目列表：这期间 ListBox 回写选中项不算用户操作，不触发右侧加载。</summary>
+    private bool _refreshingProjects;
 
     /// <summary>当前项目的类别（标注对话框的标签候选项）。</summary>
     private IReadOnlyList<string> _classes = [];
@@ -85,6 +89,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<ProjectSummaryViewModel> Projects { get; } = [];
 
+    /// <summary>界面绑定的列表：项目多时按搜索词筛过一遍（默认与 <see cref="Projects"/> 一致）。</summary>
+    public ObservableCollection<ProjectSummaryViewModel> VisibleProjects { get; } = [];
+
+    /// <summary>搜索词，空格分词、全部命中才显示。</summary>
+    [ObservableProperty]
+    private string _projectFilter = string.Empty;
+
     [ObservableProperty]
     private ProjectSummaryViewModel? _selectedProject;
 
@@ -107,6 +118,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isProjectClosed;
+
+    /// <summary>是否选中了项目：概览卡与清单表头按它显隐（照 TinyLabel 的 <c>HasProject</c>）。</summary>
+    [ObservableProperty]
+    private bool _hasProject;
 
     /// <summary>「类别管理 (4)」的括号数字。</summary>
     [ObservableProperty]
@@ -134,10 +149,31 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool _canNextPage;
 
-    /// <summary>当前数据目录下的库文件路径；没打开目录时为空。</summary>
-    public string DatabasePath => string.IsNullOrWhiteSpace(DataDirectory)
-        ? string.Empty
-        : Path.Combine(DataDirectory, TinyLabelProjectCatalog.DefaultDatabaseFile);
+    /// <summary>当前页码（从 1 起）：分页条按「第 N 页 / 共 M 页」分三段显示。</summary>
+    [ObservableProperty]
+    private int _page = 1;
+
+    [ObservableProperty]
+    private int _pageCount = 1;
+
+    [ObservableProperty]
+    private int _total;
+
+    /// <summary>
+    /// 当前库文件路径：启动时定过的就是那个（<c>--db</c> / 环境变量 / 数据目录）；
+    /// 还没初始化时按当前数据目录推算，用于「改天要新建库」的提示。
+    /// </summary>
+    public string DatabasePath => TinyLabelDatabase.CurrentPath is { Length: > 0 } initialized
+        ? initialized
+        : string.IsNullOrWhiteSpace(DataDirectory)
+            ? string.Empty
+            : Path.Combine(DataDirectory, TinyLabelProjectCatalog.DefaultDatabaseFile);
+
+    /// <summary>底栏左侧：数据存放位置（照 TinyLabel 的 FooterText）。</summary>
+    public string FooterText => Loc.Format("Label.FooterDatabase", DatabasePath);
+
+    /// <summary>底栏右侧：软件信息。</summary>
+    public string ProductInfoText => Loc.Get("Label.ProductInfo");
 
     public IReadOnlyList<string> Classes => _classes;
 
@@ -210,7 +246,7 @@ public partial class MainWindowViewModel : ObservableObject
         WebPortText = Loc.Format("Label.WebPort", WebAddress.Port);
         PageText = Loc.Format("Label.PageOf", PageIndex + 1, 1);
         TotalText = Loc.Format("Label.TotalImages", 0);
-        ProjectsSummary = Loc.Format("Label.ProjectsSummary", Projects.Count, Projects.Count(project => !project.IsClosed));
+        ApplyProjectFilter();
 
         if (SelectedProject is null)
         {
@@ -221,19 +257,22 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── 数据目录与项目列表 ────────────────────────────────────────────────────
 
-    /// <summary>启动时打开上次的数据目录；没有记录就用 <c>exe/data</c>。</summary>
+    /// <summary>启动时打开上次的数据目录；没有记录、或那个目录已经不在了，就用 <c>exe/data</c>。</summary>
     public async Task OpenLastWorkspaceAsync(CancellationToken ct = default)
     {
-        string folder = string.IsNullOrWhiteSpace(_settings.LastDataDirectory)
-            ? AppDataPaths.DataDirectory
-            : _settings.LastDataDirectory;
+        string folder = _settings.LastDataDirectory;
+
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            folder = AppDataPaths.DataDirectory;
+        }
 
         await OpenWorkspaceAsync(folder, ct).ConfigureAwait(true);
     }
 
     /// <summary>
-    /// 打开数据目录：只读库里的项目列表，**不会创建数据库**。
-    /// 目录里没有 <c>annotrain.db</c> 时给出提示；需要建库由「新建项目」或「导入数据集」显式触发。
+    /// 打开数据目录：读库里的项目列表。库在进程启动时已经建好（空目录也会有一个只有表的库），
+    /// 这里只切界面上的数据目录，运行期不换库。
     /// </summary>
     public async Task OpenWorkspaceAsync(string folder, CancellationToken ct = default)
     {
@@ -241,6 +280,9 @@ public partial class MainWindowViewModel : ObservableObject
         {
             return;
         }
+
+        // 数据目录跟着当前库走（库路径在 Program/App 启动时就定死了）
+        folder = Path.GetDirectoryName(TinyLabelDatabase.CurrentPath) ?? folder;
 
         DataDirectory = folder;
         _settings.LastDataDirectory = folder;
@@ -251,21 +293,16 @@ public partial class MainWindowViewModel : ObservableObject
         await RefreshProjectsAsync(selectProjectId: null, ct).ConfigureAwait(true);
     }
 
-    /// <summary>数据目录里是否已有 <c>annotrain.db</c>。</summary>
-    public bool HasDatabase => !string.IsNullOrWhiteSpace(DataDirectory)
-                              && TinyLabelWorkspace.DatabaseExists(StorageLocation.FromPath(DataDirectory));
-
-    /// <summary>在当前数据目录初始化空库（只建表，不建项目）；由「新建项目」在用户确认后调用。</summary>
-    public void EnsureDatabase()
-    {
-        if (!string.IsNullOrWhiteSpace(DataDirectory))
-        {
-            TinyLabelWorkspace.EnsureDatabase(StorageLocation.FromPath(DataDirectory));
-        }
-    }
-
-    /// <summary>重新读项目列表；<paramref name="selectProjectId"/> 为空时尽量保持当前选中。</summary>
-    public async Task RefreshProjectsAsync(long? selectProjectId = null, CancellationToken ct = default)
+    /// <summary>
+    /// 重新读项目列表；<paramref name="selectProjectId"/> 为空时尽量保持当前选中。
+    /// 传 <paramref name="keepImageId"/> / <paramref name="keepPage"/> 可以刷新后仍落回同一张图、同一页
+    /// （导入图片、改类别回来时用，不然选中会被清掉）。
+    /// </summary>
+    public async Task RefreshProjectsAsync(
+        long? selectProjectId = null,
+        CancellationToken ct = default,
+        long? keepImageId = null,
+        int keepPage = 0)
     {
         if (string.IsNullOrWhiteSpace(DataDirectory))
         {
@@ -281,27 +318,38 @@ public partial class MainWindowViewModel : ObservableObject
                 .ListAsync(root, ct)
                 .ConfigureAwait(true);
 
-            Projects.Clear();
+            // 重建列表期间 ListBox 会把 SelectedItem 清成 null，别让它反过来触发图片清空
+            _refreshingProjects = true;
 
-            foreach (TinyLabelProjectSummary summary in summaries)
+            try
             {
-                Projects.Add(new ProjectSummaryViewModel(summary));
+                Projects.Clear();
+
+                foreach (TinyLabelProjectSummary summary in summaries)
+                {
+                    Projects.Add(new ProjectSummaryViewModel(summary));
+                }
+
+                ProjectSummaryViewModel? target = keep is { } id
+                    ? Projects.FirstOrDefault(project => project.Id == id)
+                    : null;
+
+                // 有搜索词时优先落到看得见的那条上，别选中一条被筛掉的
+                SelectedProject = target ?? VisibleProjects.FirstOrDefault() ?? Projects.FirstOrDefault();
+
+                ApplyProjectFilter();
+            }
+            finally
+            {
+                _refreshingProjects = false;
             }
 
-            ProjectSummaryViewModel? target = keep is { } id
-                ? Projects.FirstOrDefault(project => project.Id == id)
-                : null;
-
-            SelectedProject = target ?? Projects.FirstOrDefault();
-
-            int open = summaries.Count(summary => !summary.IsClosed);
-            ProjectsSummary = Loc.Format("Label.ProjectsSummary", Projects.Count, open);
-
             Status = Projects.Count == 0
-                ? (TinyLabelWorkspace.DatabaseExists(root)
-                    ? Loc.Get("Label.NoProjectHint")
-                    : Loc.Get("Label.NoDatabase"))
+                ? Loc.Get("Label.NoProjectHint")
                 : Loc.Format("Label.DataDir", DataDirectory);
+
+            // 列表重建后统一加载一次右侧（保留原来的图片与页码）
+            await LoadProjectAsync(SelectedProject, keepImageId, keepPage).ConfigureAwait(true);
         }
         catch (Exception error)
         {
@@ -310,21 +358,72 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    partial void OnSelectedProjectChanged(ProjectSummaryViewModel? value)
-        => _ = LoadProjectAsync(value);
+    /// <summary>
+    /// 重建 <see cref="VisibleProjects"/>：项目多的时候列表靠搜索收窄，
+    /// 空格分词、每个词都要在名称/备注/Id 里命中（不改动选中项）。
+    /// </summary>
+    private void ApplyProjectFilter()
+    {
+        string[] tokens = (ProjectFilter ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>加载选中项目的图片（第一页）与类别。</summary>
-    private async Task LoadProjectAsync(ProjectSummaryViewModel? project, long? keepImageId = null)
+        IEnumerable<ProjectSummaryViewModel> matches = tokens.Length == 0
+            ? Projects
+            : Projects.Where(project => tokens.All(project.Matches));
+
+        VisibleProjects.Clear();
+
+        foreach (ProjectSummaryViewModel project in matches)
+        {
+            VisibleProjects.Add(project);
+        }
+
+        ProjectsSummary = tokens.Length == 0
+            ? Loc.Format("Label.ProjectsSummary", Projects.Count, Projects.Count(project => !project.IsClosed))
+            : Loc.Format("Label.ProjectsFiltered", VisibleProjects.Count, Projects.Count);
+    }
+
+    partial void OnProjectFilterChanged(string value)
+    {
+        ApplyProjectFilter();
+
+        // 选中的项目被筛掉了：跳到第一条可见的，右侧面板别停在看不见的项目上
+        if (SelectedProject is { } selected && !VisibleProjects.Contains(selected))
+        {
+            SelectedProject = VisibleProjects.FirstOrDefault();
+        }
+    }
+
+    partial void OnSelectedProjectChanged(ProjectSummaryViewModel? value)
+    {
+        if (_refreshingProjects)
+        {
+            return;
+        }
+
+        _ = LoadProjectAsync(value);
+    }
+
+    /// <summary>加载选中项目的图片（<paramref name="pageIndex"/> 页）与类别。</summary>
+    private async Task LoadProjectAsync(
+        ProjectSummaryViewModel? project,
+        long? keepImageId = null,
+        int pageIndex = 0)
     {
         int version = ++_loadVersion;
 
-        Images.Clear();
+        ClearImages();
         SelectedImage = null;
         _classes = [];
-        PageIndex = 0;
+        PageIndex = Math.Max(0, pageIndex);
 
         if (project is null)
         {
+            PageIndex = 0;
+            HasProject = false;
+            Page = 1;
+            PageCount = 1;
+            Total = 0;
             ProjectTitle = Loc.Get("Label.NoProject");
             ProjectDescription = string.Empty;
             ProjectStats = "—";
@@ -343,6 +442,7 @@ public partial class MainWindowViewModel : ObservableObject
         ProjectStats = project.Stats;
         ProjectProgress = project.Progress * 100;
         IsProjectClosed = project.IsClosed;
+        HasProject = true;
 
         try
         {
@@ -374,24 +474,38 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        StorageLocation root = StorageLocation.FromPath(DataDirectory);
+
         TinyLabelImagePage page = await _images
-            .QueryAsync(
-                StorageLocation.FromPath(DataDirectory),
-                project.Id,
-                PageIndex,
-                DefaultPageSize)
+            .QueryAsync(root, project.Id, PageIndex, DefaultPageSize)
             .ConfigureAwait(true);
+
+        // 页码越界（导入变多 / 删图变少都会遇到）：落到最后一页，别给一张空清单
+        if (page.Total > 0 && page.Items.Count == 0 && PageIndex > 0)
+        {
+            PageIndex = Math.Max(0, page.PageCount - 1);
+            page = await _images
+                .QueryAsync(root, project.Id, PageIndex, DefaultPageSize)
+                .ConfigureAwait(true);
+        }
 
         if (version != _loadVersion)
         {
             return;
         }
 
-        Images.Clear();
+        ClearImages();
+
+        var added = new List<ProjectImageViewModel>(page.Items.Count);
 
         foreach (TinyLabelImageRow row in page.Items)
         {
-            Images.Add(new ProjectImageViewModel(row));
+            var item = new ProjectImageViewModel(row);
+
+            // 缩略图直接读 thumbs/ 里的文件；缺的下面在后台补
+            item.SetThumbnail(ThumbnailCache.PathOf(root, project.Id, row.RelPath));
+            Images.Add(item);
+            added.Add(item);
         }
 
         SelectedImage = (keepImageId is { } id
@@ -399,6 +513,9 @@ public partial class MainWindowViewModel : ObservableObject
                             : null)
                         ?? Images.FirstOrDefault();
 
+        Page = page.DisplayPage;
+        PageCount = page.PageCount;
+        Total = page.Total;
         PageText = Loc.Format("Label.PageOf", page.DisplayPage, page.PageCount);
         TotalText = Loc.Format("Label.TotalImages", page.Total);
         CanPrevPage = PageIndex > 0;
@@ -407,6 +524,42 @@ public partial class MainWindowViewModel : ObservableObject
         Status = page.Total == 0
             ? Loc.Get("Label.NoImages")
             : Loc.Format("Label.ProjectOpened", project.Name, page.Total, page.DisplayPage, page.PageCount);
+
+        _ = EnsureThumbnailsAsync(root, project.Id, added);
+    }
+
+    /// <summary>补齐这一页缺的缩略图（老项目 / 刚导入的图）；生成失败就留空，不影响清单。</summary>
+    private async Task EnsureThumbnailsAsync(
+        StorageLocation root,
+        long projectId,
+        IReadOnlyList<ProjectImageViewModel> items)
+    {
+        foreach (ProjectImageViewModel item in items)
+        {
+            if (item.Thumbnail is not null)
+            {
+                continue;
+            }
+
+            string? generated = await ThumbnailCache
+                .EnsureAsync(root, projectId, item.Row.RelPath, item.Row.FilePath)
+                .ConfigureAwait(true);
+
+            if (generated is not null && Images.Contains(item))
+            {
+                item.SetThumbnail(generated);
+            }
+        }
+    }
+
+    private void ClearImages()
+    {
+        foreach (ProjectImageViewModel item in Images)
+        {
+            item.Dispose();
+        }
+
+        Images.Clear();
     }
 
     /// <summary>翻页：<paramref name="delta"/> 为 +1 / -1。</summary>
@@ -565,6 +718,53 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    // ── 清单行菜单 ────────────────────────────────────────────────────────────
+
+    /// <summary>清单行菜单：重置为未标注（只改状态，已存的标注数据不删）。</summary>
+    public Task ResetImageStateAsync(ProjectImageViewModel row) => RunBusyAsync(
+        Loc.Get("Label.ResettingImage"),
+        async () =>
+        {
+            await _images
+                .SetStateAsync(StorageLocation.FromPath(DataDirectory), row.Id, "pending")
+                .ConfigureAwait(true);
+
+            Report(Loc.Format("Label.ImageReset", row.DisplayPath));
+
+            await RefreshCurrentProjectAsync().ConfigureAwait(true);
+        },
+        "reset image state");
+
+    /// <summary>清单行菜单：清除标注（删标注行，状态退回待标注，rev +1）。</summary>
+    public Task ClearAnnotationForAsync(ProjectImageViewModel row) => RunBusyAsync(
+        Loc.Get("Label.ClearingAnnotation"),
+        async () =>
+        {
+            await _images
+                .ClearAnnotationAsync(StorageLocation.FromPath(DataDirectory), row.Id)
+                .ConfigureAwait(true);
+
+            Report(Loc.Format("Label.ImageCleared", row.DisplayPath));
+
+            await RefreshCurrentProjectAsync().ConfigureAwait(true);
+        },
+        "clear annotation");
+
+    /// <summary>清单行菜单：删除图片（库里的行 + 导入模式下项目目录里的原图与缩略图）。</summary>
+    public Task DeleteImageForAsync(ProjectImageViewModel row) => RunBusyAsync(
+        Loc.Get("Label.DeletingImage"),
+        async () =>
+        {
+            await _images
+                .DeleteImageAsync(StorageLocation.FromPath(DataDirectory), row.Id)
+                .ConfigureAwait(true);
+
+            Report(Loc.Format("Label.ImageDeleted", row.DisplayPath));
+
+            await RefreshCurrentProjectAsync().ConfigureAwait(true);
+        },
+        "delete image");
+
     // ── 图片入库 / 导出 ───────────────────────────────────────────────────────
 
     /// <summary>导入图片文件（复制进项目目录）。</summary>
@@ -618,7 +818,11 @@ public partial class MainWindowViewModel : ObservableObject
             AppendLog(string.Join(Environment.NewLine, report.Warnings.Take(10)));
         }
 
-        await RefreshProjectsAsync(SelectedProject?.Id).ConfigureAwait(true);
+        // 导入完刷新：右侧仍停在原来那张图、那一页，不把用户的选中冲掉
+        await RefreshProjectsAsync(
+            SelectedProject?.Id,
+            keepImageId: SelectedImage?.Id,
+            keepPage: PageIndex).ConfigureAwait(true);
     }
 
     /// <summary>把当前项目导出成 YOLO / COCO 数据集。</summary>
@@ -771,4 +975,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendLog(string text)
         => LogText = string.IsNullOrEmpty(LogText) ? text : $"{LogText}{Environment.NewLine}{text}";
+
+    /// <summary>日志窗口的「清空」。</summary>
+    public void ClearLog() => LogText = string.Empty;
 }

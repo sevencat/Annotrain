@@ -24,9 +24,33 @@ public partial class MainWindow : Window
 
     private IServiceProvider? Services => (Application.Current as App)?.Services;
 
-    // ── 顶栏：Web 入口 / 数据目录 / 用户 / 关于 ────────────────────────────────
+    // ── 顶栏：Web 入口 / 数据目录 / 用户 / 关于 / 日志 ──────────────────────────
 
-    /// <summary>「打开数据目录」：在资源管理器里打开，不弹选目录（换目录在底栏「切换数据目录…」）。</summary>
+    private LogWindow? _logWindow;
+
+    /// <summary>「日志」：弹独立窗口（同一次只开一个），跟着日志实时滚到底。</summary>
+    private void OnOpenLog(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (_logWindow is { IsVisible: true })
+        {
+            _logWindow.Activate();
+            return;
+        }
+
+        _logWindow = new LogWindow(viewModel);
+        _logWindow.Closed += (_, _) => _logWindow = null;
+        _logWindow.Show(this);
+    }
+
+    /// <summary>
+    /// 「打开数据目录」：在资源管理器里打开**库文件所在目录**，只是看一眼，
+    /// 不选目录、不改库位置（库路径启动时就定了）。
+    /// </summary>
     private void OnOpenDataFolder(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel viewModel)
@@ -34,26 +58,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(viewModel.DataDirectory) || !Directory.Exists(viewModel.DataDirectory))
+        string folder = Path.GetDirectoryName(viewModel.DatabasePath) ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
         {
             viewModel.Report(Loc.Get("Label.NoDataDir"));
             return;
         }
 
-        if (!OpenInExplorer(viewModel.DataDirectory))
+        if (!OpenInExplorer(folder))
         {
-            viewModel.Report(Loc.Format("Label.OpenFolderFailed", viewModel.DataDirectory));
-        }
-    }
-
-    /// <summary>底栏「切换数据目录…」：选一个目录后按它读库里的项目列表。</summary>
-    private async void OnPickDataFolder(object? sender, RoutedEventArgs e)
-    {
-        string? folder = await PickFolderAsync(Loc.Get("Label.PickDataDir"));
-
-        if (folder is not null && DataContext is MainWindowViewModel viewModel)
-        {
-            await viewModel.OpenWorkspaceAsync(folder);
+            viewModel.Report(Loc.Format("Label.OpenFolderFailed", folder));
         }
     }
 
@@ -73,11 +88,13 @@ public partial class MainWindow : Window
 
     private async void OnUserManagement(object? sender, RoutedEventArgs e)
     {
-        // 账号归 Web 服务端管（settings.db 的 web_users），这里只读出来看看
-        var options = new ServerOptions { DataDirectory = AppDataPaths.DataDirectory };
+        if (Services?.GetService<WebUserStore>() is not { } users)
+        {
+            return;
+        }
 
-        using var users = new WebUserStore(options.UsersDatabasePath);
-        var dialog = new UserManagementWindow(users.List());
+        // 账号归 Web 服务端管（annotrain.db 的 web_users），窗口里直接增改与重置密码
+        var dialog = new UserManagementWindow(users);
 
         await dialog.ShowDialog(this);
     }
@@ -112,31 +129,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 「新建项目」不建数据库：目录里还没有 annotrain.db 时先问用户要不要建空库
-        if (!viewModel.HasDatabase)
-        {
-            var ask = new ConfirmWindow(
-                Loc.Get("Confirm.NewDatabaseTitle"),
-                Loc.Format("Confirm.NewDatabaseMessage", viewModel.DatabasePath),
-                Loc.Get("Common.Create"));
-
-            if (!await ask.ShowDialog<bool>(this))
-            {
-                return;
-            }
-
-            try
-            {
-                viewModel.EnsureDatabase();
-                await viewModel.RefreshProjectsAsync();
-            }
-            catch (Exception error)
-            {
-                viewModel.Report(Loc.Format("Label.ProjectCreateFailed", error.Message));
-                return;
-            }
-        }
-
+        // 库在启动时就建好了（空目录也有一个只有表的库），这里直接建项目
         var dialog = new ProjectEditorWindow();
         ProjectDraft? draft = await dialog.ShowDialog<ProjectDraft?>(this);
 
@@ -330,7 +323,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        string folder = Path.Combine(viewModel.DataDirectory, "projects", project.Id.ToString());
+        string folder = TinyLabelWorkspace.ProjectDirectory(
+            StorageLocation.FromPath(viewModel.DataDirectory),
+            project.Id);
 
         if (!Directory.Exists(folder))
         {
@@ -380,12 +375,72 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>表格里每行的「标注」按钮。</summary>
-    private async void OnAnnotateRow(object? sender, RoutedEventArgs e)
+    /// <summary>行尾 ⋮ 菜单：Flyout 里的 MenuItem 拿不到行的 DataContext，点按钮时先记下这一行。</summary>
+    private ProjectImageViewModel? _actionRow;
+
+    private void OnImageActionMenu(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Control)?.DataContext is ProjectImageViewModel item)
+        _actionRow = (sender as Control)?.Tag as ProjectImageViewModel;
+    }
+
+    private async void OnAnnotateImageAction(object? sender, RoutedEventArgs e)
+        => await AnnotateAsync(_actionRow ?? (DataContext as MainWindowViewModel)?.SelectedImage);
+
+    /// <summary>菜单「重置为未标注」：只改状态，标注数据留着（与 TinyLabel 一致）。</summary>
+    private async void OnResetImageState(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel || (_actionRow ?? viewModel.SelectedImage) is not { } row)
         {
-            await AnnotateAsync(item);
+            return;
+        }
+
+        await viewModel.ResetImageStateAsync(row);
+    }
+
+    /// <summary>菜单「清除标注」：删标注数据，先确认。</summary>
+    private async void OnClearAnnotation(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel || (_actionRow ?? viewModel.SelectedImage) is not { } row)
+        {
+            return;
+        }
+
+        var confirm = new ConfirmWindow(
+            Loc.Get("Confirm.ClearAnnotationTitle"),
+            Loc.Format("Label.ConfirmClearAnnotation", row.DisplayPath),
+            Loc.Get("Common.Clear"));
+
+        if (await confirm.ShowDialog<bool>(this))
+        {
+            await viewModel.ClearAnnotationForAsync(row);
+        }
+    }
+
+    /// <summary>菜单「删除图片」：库里的行 + 导入模式下的原图，先确认。</summary>
+    private async void OnDeleteImage(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel || (_actionRow ?? viewModel.SelectedImage) is not { } row)
+        {
+            return;
+        }
+
+        var confirm = new ConfirmWindow(
+            Loc.Get("Confirm.DeleteImageTitle"),
+            Loc.Format("Label.ConfirmDeleteImage", row.DisplayPath),
+            Loc.Get("Common.Delete"));
+
+        if (await confirm.ShowDialog<bool>(this))
+        {
+            await viewModel.DeleteImageForAsync(row);
+        }
+    }
+
+    /// <summary>双击清单行直接进标注，跟 TinyLabel 的行单击选中、双击打开一致。</summary>
+    private async void OnRowDoubleTapped(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            await AnnotateAsync(viewModel.SelectedImage);
         }
     }
 
@@ -429,49 +484,45 @@ public partial class MainWindow : Window
             BlobStoreRegistry registry = services.GetRequiredService<BlobStoreRegistry>();
 
             long projectId = viewModel.SelectedProject.Id;
-            string databasePath = viewModel.DatabasePath;
 
-            ProjectImageViewModel? current = item;
+            // 一次开窗：当前这张 + 本页后面还没标注的（保存并继续在同窗口换图，不关窗重开）
+            List<AnnotationTarget> targets = BuildAnnotationQueue(viewModel, item, registry);
 
-            while (current is not null)
-            {
-                var window = new AnnotationWindow(
-                    databasePath,
-                    projectId,
-                    current.Row,
-                    viewModel.Classes,
-                    registry.Get(current.Image.Location),
-                    settings,
-                    settingsStore);
+            var window = new AnnotationWindow(
+                projectId,
+                targets,
+                viewModel.Classes,
+                settings,
+                settingsStore);
 
-                AnnotationOutcome outcome = await window.ShowDialog<AnnotationOutcome>(this);
+            await window.ShowDialog<AnnotationOutcome>(this);
 
-                if (outcome == AnnotationOutcome.Cancelled)
-                {
-                    return;
-                }
-
-                await viewModel.RefreshCurrentProjectAsync(current.Id);
-
-                if (outcome == AnnotationOutcome.Saved)
-                {
-                    return;
-                }
-
-                // 保存并继续：领下一张还没标的图
-                current = viewModel.Images.FirstOrDefault(image => image.StateText == "未标注" && image != current);
-
-                if (current is null)
-                {
-                    viewModel.Report("这一页没有待标注的图片了，可以翻下一页");
-                    return;
-                }
-            }
+            // 关窗后刷新当前页，并落回最后标的那张
+            await viewModel.RefreshCurrentProjectAsync(window.LastImageId ?? item.Id);
         }
         catch (Exception error)
         {
             viewModel.Report($"打开标注窗口失败：{error.Message}");
         }
+    }
+
+    /// <summary>连续标注队列：起点这张在前，其后是同页还没标注的图（不绕回已标注的）。</summary>
+    private static List<AnnotationTarget> BuildAnnotationQueue(
+        MainWindowViewModel viewModel,
+        ProjectImageViewModel start,
+        BlobStoreRegistry registry)
+    {
+        var order = new List<ProjectImageViewModel> { start };
+
+        order.AddRange(viewModel.Images.Where(image => !ReferenceEquals(image, start) && image.IsPending));
+
+        return
+        [
+            .. order.Select(image => new AnnotationTarget(
+                image.Row,
+                image.Image,
+                registry.Get(image.Image.Location))),
+        ];
     }
 
     // ── 分页 ─────────────────────────────────────────────────────────────────

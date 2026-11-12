@@ -62,8 +62,8 @@ public sealed class TinyLabelProjectCatalog(
             return [];
         }
 
-        string databasePath = Path.Combine(root.Root, DefaultDatabaseFile);
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         List<ProjectEntity> projects = database.Orm.Select<ProjectEntity>()
             .OrderBy(project => project.Id)

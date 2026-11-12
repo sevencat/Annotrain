@@ -16,7 +16,10 @@ public sealed class TinyLabelProjectService(
 {
     public const int MaxNameLength = 128;
 
-    /// <summary>在当前数据目录的 <c>annotrain.db</c> 里新建一个空项目，返回项目 Id。</summary>
+    /// <summary>
+    /// 在当前数据目录的 <c>annotrain.db</c> 里新建一个空项目，返回项目 Id；
+    /// 顺手把项目目录 <c>projects/{id}/</c> 建好，后面导图直接往里面复制。
+    /// </summary>
     public Task<long> CreateAsync(
         StorageLocation root,
         string name,
@@ -27,9 +30,9 @@ public sealed class TinyLabelProjectService(
         ct.ThrowIfCancellationRequested();
 
         string trimmed = ValidateName(name);
-        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelWorkspace.RequireDatabase(root);
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         long projectId = (long)database.Orm.Insert(new ProjectEntity
         {
@@ -40,7 +43,14 @@ public sealed class TinyLabelProjectService(
             CreatedAt = DateTime.UtcNow,
         }).ExecuteIdentity();
 
-        logger?.LogInformation("新建项目 {Name}（Id={Id}）于 {Root}", trimmed, projectId, root);
+        string projectDirectory = TinyLabelWorkspace.EnsureProjectDirectory(root, projectId);
+
+        logger?.LogInformation(
+            "新建项目 {Name}（Id={Id}）于 {Root}，目录 {Directory}",
+            trimmed,
+            projectId,
+            root,
+            projectDirectory);
 
         return Task.FromResult(projectId);
     }
@@ -57,9 +67,9 @@ public sealed class TinyLabelProjectService(
         ct.ThrowIfCancellationRequested();
 
         string trimmed = ValidateName(name);
-        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelWorkspace.RequireDatabase(root);
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         int affected = database.Orm.Update<ProjectEntity>()
             .Where(project => project.Id == projectId)
@@ -87,9 +97,9 @@ public sealed class TinyLabelProjectService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelWorkspace.RequireDatabase(root);
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         int affected = database.Orm.Update<ProjectEntity>()
             .Where(project => project.Id == projectId)
@@ -119,9 +129,9 @@ public sealed class TinyLabelProjectService(
         ArgumentNullException.ThrowIfNull(root);
         ct.ThrowIfCancellationRequested();
 
-        string databasePath = TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelWorkspace.RequireDatabase(root);
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath, createIfMissing: false);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         database.Orm.Delete<AnnotationEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
         database.Orm.Delete<ImageEntity>().Where(row => row.ProjectId == projectId).ExecuteAffrows();
@@ -130,7 +140,7 @@ public sealed class TinyLabelProjectService(
 
         if (deleteImages)
         {
-            string folder = Path.Combine(root.Root, "projects", projectId.ToString());
+            string folder = TinyLabelWorkspace.ProjectDirectory(root, projectId);
 
             if (Directory.Exists(folder))
             {

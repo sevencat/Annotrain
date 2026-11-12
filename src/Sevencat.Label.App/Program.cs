@@ -1,5 +1,6 @@
 using Avalonia;
 using ImageFacade.SkiaSharp;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Imaging;
 using Sevencat.Core.Infrastructure;
 
@@ -25,6 +26,10 @@ internal static class Program
         // --import <源目录> --output <目标目录>：把 YOLO / RF-DETR 数据集导成标注项目，不开窗口
         if (ImportCommand.TryParse(args, out ImportCommand command))
         {
+            // 导入写的就是 --output 目录里的 annotrain.db：库跟着它走（--db 显式指定时以 --db 为准）
+            AppDataPaths.Initialize(command.DestinationPath);
+            TinyLabelDatabase.Initialize(AppDataPaths.ResolveDatabasePath(args));
+
             return ImportCommandRunner.RunAsync(command).GetAwaiter().GetResult();
         }
 

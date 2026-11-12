@@ -65,7 +65,9 @@ public class TinyLabelDatasetTests
         using var workspace = new TestWorkspace();
         (string dbPath, long projectId) = TinyLabelSeed.Create(workspace.Root, annotationJson: null);
 
-        using var store = new DatabaseAnnotationStore(dbPath, projectId);
+        TinyLabelDatabase.Initialize(dbPath, createIfMissing: false);
+
+        using var store = new DatabaseAnnotationStore(projectId);
         var image = new ImageRef("a.jpg", StorageLocation.FromPath(workspace.Root));
 
         Assert.False(await store.ExistsAsync(image));

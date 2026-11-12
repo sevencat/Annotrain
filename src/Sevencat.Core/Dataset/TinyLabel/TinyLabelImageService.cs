@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using FreeSql;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Imaging;
 using Sevencat.Core.Localization;
@@ -7,7 +8,7 @@ using Sevencat.Core.Storage;
 
 namespace Sevencat.Core.Dataset.TinyLabel;
 
-/// <summary>图片清单的一行（状态 / 版本 / 备注都带出来，界面直接用）。</summary>
+/// <summary>图片清单的一行（状态 / 版本 / 备注 / 最后标注信息都带出来，界面直接用）。</summary>
 public sealed record TinyLabelImageRow(
     long Id,
     long ProjectId,
@@ -19,7 +20,10 @@ public sealed record TinyLabelImageRow(
     string State,
     int Revision,
     string? Remark,
-    string? Split)
+    string? Split,
+    DateTime? AnnotatedAt = null,
+    long AnnotatedBy = 0,
+    string? AnnotatorName = null)
 {
     public string SizeText => $"{Width}×{Height}";
 
@@ -91,41 +95,52 @@ public sealed class TinyLabelImageService(
         pageSize = Math.Clamp(pageSize, 1, 500);
         pageIndex = Math.Max(0, pageIndex);
 
-        using TinyLabelDatabase database = Open(root, createIfMissing: false);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
-        List<ImageEntity> rows = database.Orm.Select<ImageEntity>()
-            .Where(row => row.ProjectId == projectId)
-            .OrderBy(row => row.Split)
-            .OrderBy(row => row.FileName)
-            .ToList();
-
-        IEnumerable<ImageEntity> filtered = rows;
+        // 过滤 / 排序 / 分页全部在 SQL 里做：图片上万条的项目也不能整表读进内存再 LINQ
+        ISelect<ImageEntity> query = database.Orm
+            .Select<ImageEntity>()
+            .Where(row => row.ProjectId == projectId);
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             string needle = keyword.Trim();
-            filtered = filtered.Where(row =>
-                row.FileName.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                || row.RelPath.Contains(needle, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(row => row.FileName.Contains(needle) || row.RelPath.Contains(needle));
         }
 
         if (!string.IsNullOrWhiteSpace(state))
         {
-            filtered = filtered.Where(row => string.Equals(row.State, state, StringComparison.OrdinalIgnoreCase));
+            string value = state.Trim();
+            query = query.Where(row => row.State == value);
         }
 
         if (!string.IsNullOrWhiteSpace(split))
         {
-            filtered = filtered.Where(row => string.Equals(row.Split, split, StringComparison.OrdinalIgnoreCase));
+            string value = split.Trim();
+            query = query.Where(row => row.Split == value);
         }
 
-        List<ImageEntity> all = filtered.ToList();
-        int total = all.Count;
+        int total = (int)query.Count();
 
-        List<TinyLabelImageRow> page = all
+        List<ImageEntity> window = query
+            .OrderBy(row => row.Split)
+            .OrderBy(row => row.FileName)
+            // 同 Split + 同文件名的行也要有稳定次序，翻页才不会重复或漏行
+            .OrderBy(row => row.Id)
             .Skip(pageIndex * pageSize)
-            .Take(pageSize)
-            .Select(row => new TinyLabelImageRow(
+            .Limit(pageSize)
+            .ToList();
+
+        // 最后标注信息与用户显示名都只查这一页的 20 条，避免把整项目标注原文读出来
+        Dictionary<long, (long UserId, DateTime At)> stamps = ReadAnnotationStamps(database, window);
+        Dictionary<long, string> users = ReadUserNames(database);
+
+        List<TinyLabelImageRow> page = [.. window.Select(row =>
+        {
+            stamps.TryGetValue(row.Id, out (long UserId, DateTime At) stamp);
+
+            return new TinyLabelImageRow(
                 row.Id,
                 row.ProjectId,
                 row.FileName,
@@ -136,12 +151,104 @@ public sealed class TinyLabelImageService(
                 row.State,
                 row.Revision,
                 row.Remark,
-                row.Split))
-            .ToList();
+                row.Split,
+                stamp.At == default ? null : stamp.At,
+                stamp.UserId,
+                AnnotatorOf(stamp, users));
+        })];
 
         ct.ThrowIfCancellationRequested();
 
         return Task.FromResult(new TinyLabelImagePage(page, total, pageIndex, pageSize));
+    }
+
+    /// <summary>这一页图片的标注时间与标注人（<c>annotations</c> 行，没有标注就没有条目）。</summary>
+    private static Dictionary<long, (long UserId, DateTime At)> ReadAnnotationStamps(
+        TinyLabelDatabase database,
+        IReadOnlyList<ImageEntity> window)
+    {
+        if (window.Count == 0)
+        {
+            return [];
+        }
+
+        List<long> ids = [.. window.Select(row => row.Id)];
+
+        // 只取时间与用户 Id，不把 DocJson 整段读出来
+        List<AnnotationStamp> rows = database.Orm
+            .Select<AnnotationEntity>()
+            .Where(row => ids.Contains(row.ImageId))
+            .ToList(row => new AnnotationStamp
+            {
+                ImageId = row.ImageId,
+                UpdatedBy = row.UpdatedBy,
+                UpdatedAt = row.UpdatedAt,
+            });
+
+        return rows.ToDictionary(row => row.ImageId, row => (row.UpdatedBy, row.UpdatedAt));
+    }
+
+    /// <summary><c>web_users</c> 的 Id → 显示名；库里没有这张表（纯桌面端项目）就返回空。</summary>
+    private Dictionary<long, string> ReadUserNames(TinyLabelDatabase database)
+    {
+        try
+        {
+            bool exists = database.Orm.Ado.Query<int>(
+                "select count(1) from sqlite_master where type='table' and name='web_users'")[0] > 0;
+
+            if (!exists)
+            {
+                return [];
+            }
+
+            List<WebUserNameRow> rows = database.Orm.Ado
+                .Query<WebUserNameRow>("select Id, DisplayName from web_users");
+
+            return rows
+                .Where(row => !string.IsNullOrWhiteSpace(row.DisplayName))
+                .ToDictionary(row => row.Id, row => row.DisplayName!);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger?.LogWarning(error, "读取 web_users 失败，标注人显示为用户 Id");
+            return [];
+        }
+    }
+
+    /// <summary>标注人显示名：没有标注留空，<c>0</c> 是桌面端本机，其它按 <c>web_users</c> 反查。</summary>
+    private static string? AnnotatorOf(
+        (long UserId, DateTime At) stamp,
+        IReadOnlyDictionary<long, string> users)
+    {
+        if (stamp.At == default)
+        {
+            return null;
+        }
+
+        if (stamp.UserId == 0)
+        {
+            return Text.Get("Label.LocalAnnotator");
+        }
+
+        return users.TryGetValue(stamp.UserId, out string? name) ? name : $"#{stamp.UserId}";
+    }
+
+    /// <summary>标注行的读取投影（只要时间与人，不碰 <c>DocJson</c>）。</summary>
+    private sealed class AnnotationStamp
+    {
+        public long ImageId { get; set; }
+
+        public long UpdatedBy { get; set; }
+
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    /// <summary><c>web_users</c> 的只读投影。</summary>
+    private sealed class WebUserNameRow
+    {
+        public long Id { get; set; }
+
+        public string? DisplayName { get; set; }
     }
 
     /// <summary>改图片状态；<paramref name="remark"/> 为 null 时保留原备注。</summary>
@@ -155,7 +262,8 @@ public sealed class TinyLabelImageService(
         ArgumentNullException.ThrowIfNull(root);
         ArgumentException.ThrowIfNullOrWhiteSpace(state);
 
-        using TinyLabelDatabase database = Open(root, createIfMissing: false);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         var update = database.Orm.Update<ImageEntity>()
             .Where(row => row.Id == imageId)
@@ -172,6 +280,97 @@ public sealed class TinyLabelImageService(
         update.ExecuteAffrows();
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 清除标注：删掉 <c>annotations</c> 这一行，图片退回 <c>pending</c>（已排除的保持排除），
+    /// 版本号 +1，下游凭 rev 就能看出这次改动。
+    /// </summary>
+    public Task<bool> ClearAnnotationAsync(StorageLocation root, long imageId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ct.ThrowIfCancellationRequested();
+
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
+
+        ImageEntity? image = database.Orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
+
+        if (image is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        string next = string.Equals(image.State, "excluded", StringComparison.OrdinalIgnoreCase)
+            ? "excluded"
+            : "pending";
+
+        database.Orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
+
+        database.Orm.Update<ImageEntity>()
+            .Where(row => row.Id == imageId)
+            .Set(row => row.State, next)
+            .Set(row => row.Revision, image.Revision + 1)
+            .Set(row => row.UpdatedAt, DateTime.UtcNow)
+            .ExecuteAffrows();
+
+        logger?.LogInformation("清除图片 {Image} 的标注，状态回到 {State}", imageId, next);
+
+        return Task.FromResult(true);
+    }
+
+    /// <summary>
+    /// 删除图片：标注与图片行一起删；<c>copy</c>（导入）模式下连项目目录里的原图与缩略图一起清，
+    /// <c>scan</c>（扫描）模式只删登记，原文件是别人目录里的，不动。
+    /// </summary>
+    public Task<bool> DeleteImageAsync(StorageLocation root, long imageId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ct.ThrowIfCancellationRequested();
+
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
+
+        ImageEntity? image = database.Orm.Select<ImageEntity>().Where(row => row.Id == imageId).First();
+
+        if (image is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        ProjectEntity? project = database.Orm
+            .Select<ProjectEntity>()
+            .Where(row => row.Id == image.ProjectId)
+            .First();
+
+        database.Orm.Delete<AnnotationEntity>().Where(row => row.ImageId == imageId).ExecuteAffrows();
+        database.Orm.Delete<ImageEntity>().Where(row => row.Id == imageId).ExecuteAffrows();
+
+        if (project is not null && string.Equals(project.StorageMode, "copy", StringComparison.OrdinalIgnoreCase))
+        {
+            TryDelete(image.FilePath);
+            TryDelete(ThumbnailCache.PathOf(root, image.ProjectId, image.RelPath));
+        }
+
+        logger?.LogInformation("删除图片 {Image}（项目 {Project}）", imageId, image.ProjectId);
+
+        return Task.FromResult(true);
+    }
+
+    /// <summary>删文件失败只记日志：库里已经删了，留个孤儿文件不影响使用。</summary>
+    private void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            logger?.LogWarning(error, "删不掉文件 {Path}，只删了库里的登记", path);
+        }
     }
 
     /// <summary>多选图片导入：复制进 <c>projects/{id}/</c>（<paramref name="copy"/>=false 时只登记原路径）。</summary>
@@ -235,12 +434,14 @@ public sealed class TinyLabelImageService(
         bool copy,
         CancellationToken ct)
     {
-        using TinyLabelDatabase database = Open(root, createIfMissing: false);
+        TinyLabelWorkspace.RequireDatabase(root);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
 
         ProjectEntity project = database.Orm.Select<ProjectEntity>().Where(row => row.Id == projectId).First()
             ?? throw new InvalidOperationException(Text.Format("Error.ProjectNotFound", projectId));
 
-        string projectFolder = Path.Combine(root.Root, "projects", project.Id.ToString());
+        string projectFolder = TinyLabelWorkspace.EnsureProjectDirectory(root, project.Id);
+        string imageFolder = TinyLabelWorkspace.ImageDirectory(root, project.Id);
 
         // 已有图片：按内容哈希 + 相对路径去重
         HashSet<string> hashes = [.. database.Orm.Select<ImageEntity>()
@@ -280,7 +481,8 @@ public sealed class TinyLabelImageService(
 
             if (copy)
             {
-                string target = Path.Combine(projectFolder, relative.Replace('/', Path.DirectorySeparatorChar));
+                // 原图统一进 projects/{id}/images/，缩略图在旁边的 thumbs/（按需生成）
+                string target = Path.Combine(imageFolder, relative.Replace('/', Path.DirectorySeparatorChar));
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
                 if (File.Exists(target))
@@ -356,18 +558,6 @@ public sealed class TinyLabelImageService(
             copy);
 
         return new TinyLabelImageImportReport(pending.Count, skipped, warnings);
-    }
-
-    private TinyLabelDatabase Open(StorageLocation root, bool createIfMissing)
-    {
-        if (!root.IsFile)
-        {
-            throw new NotSupportedException(Text.Get("Error.DatabaseRequiresLocalFolder"));
-        }
-
-        string databasePath = Path.Combine(root.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
-
-        return TinyLabelDatabase.Open(databasePath, createIfMissing);
     }
 
     private static string? NormalizeSplit(string? split)

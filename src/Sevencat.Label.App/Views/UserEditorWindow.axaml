@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Sevencat.Label.App.Localization"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="Sevencat.Label.App.Views.UserEditorWindow"
+        Width="400"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PanelBackgroundBrush}">
+
+  <StackPanel Margin="16" Spacing="8">
+    <TextBlock Text="{l:Loc Users.FieldUserName}" FontSize="13" Opacity="0.6" />
+    <TextBox Name="UserNameBox" PlaceholderText="{l:Loc Users.UserNameRule}" />
+
+    <TextBlock Text="{l:Loc Users.FieldDisplayName}" FontSize="13" Opacity="0.6" />
+    <TextBox Name="DisplayNameBox" PlaceholderText="{l:Loc Users.DisplayNameHint}" />
+
+    <StackPanel Name="PasswordPanel" Spacing="4">
+      <TextBlock Text="{l:Loc Users.FieldPassword}" FontSize="13" Opacity="0.6" />
+      <TextBox Name="PasswordBox" PasswordChar="●" PlaceholderText="{l:Loc Users.PasswordRule}" />
+    </StackPanel>
+
+    <TextBlock Text="{l:Loc Users.FieldRole}" FontSize="13" Opacity="0.6" />
+    <ComboBox Name="RoleBox" HorizontalAlignment="Stretch" SelectedIndex="0">
+      <ComboBoxItem Content="{l:Loc Users.RoleAnnotator}" Tag="annotator" />
+      <ComboBoxItem Content="{l:Loc Users.RoleAdmin}" Tag="admin" />
+    </ComboBox>
+
+    <TextBlock Name="StatusText" TextWrapping="Wrap" FontSize="13" Opacity="0.75" MinHeight="16" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8"
+                Margin="0,4,0,0">
+      <Button Click="OnCancel" Padding="16,4" ToolTip.Tip="{l:Loc Common.Cancel}">
+        <materialIcons:MaterialIcon Kind="Close" Width="20" Height="20"
+                                    Foreground="{Binding $parent[Button].Foreground}" />
+      </Button>
+      <Button Click="OnSave" IsDefault="True" Padding="16,4" ToolTip.Tip="{l:Loc Common.Save}">
+        <materialIcons:MaterialIcon Kind="Check" Width="20" Height="20"
+                                    Foreground="{Binding $parent[Button].Foreground}" />
+      </Button>
+    </StackPanel>
+  </StackPanel>
+
+</Window>

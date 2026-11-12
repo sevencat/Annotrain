@@ -1,51 +1,237 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Sevencat.Label.App.ViewModels"
         xmlns:controls="using:Sevencat.Label.App.Controls"
         xmlns:l="using:Sevencat.Label.App.Localization"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Sevencat.Label.App.Views.AnnotationWindow"
-        Title="{l:Loc Annotate.Title}"
-        Width="1180" Height="820"
-        MinWidth="820" MinHeight="560"
-        WindowStartupLocation="CenterOwner">
+        x:DataType="vm:AnnotationViewModel"
+        Title="{Binding Title}"
+        Width="1180" Height="760"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource PanelBackgroundBrush}">
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <DockPanel>
 
-    <Border Grid.Row="0" Padding="10,8" BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource MaterialDesignDivider}">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,12,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-        <ToggleButton Grid.Column="0" x:Name="SelectTool" Content="{l:Loc Annotate.Select}" IsChecked="True" Click="OnSelectTool" />
-        <ToggleButton Grid.Column="1" x:Name="RectTool" Content="{l:Loc Annotate.Rectangle}" Click="OnRectTool" />
-        <Button Grid.Column="2" Content="{l:Loc Annotate.FitWindow}" Click="OnFit" />
+    <!-- 工具栏：画布控件本身不带 chrome，工具与标签由宿主提供 -->
+    <Border DockPanel.Dock="Top" Padding="8,6"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource PanelBorderBrush}">
+      <DockPanel>
+        <!-- 左侧工具：按用途分组，组间竖线 -->
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal"
+                    Spacing="6" VerticalAlignment="Center">
+          <Border Classes="buttonGroup">
+            <StackPanel Orientation="Horizontal" Spacing="0">
+              <ToggleButton Classes="icon" CommandParameter="select"
+                            IsChecked="{Binding IsSelectTool, Mode=OneWay}"
+                            Command="{Binding SetToolCommand}"
+                            ToolTip.Tip="{l:Loc Annotate.ToolSelectTip}">
+                <materialIcons:MaterialIcon Kind="CursorDefault" Width="20" Height="20"
+                                            Foreground="{Binding $parent[ToggleButton].Foreground}" />
+              </ToggleButton>
+              <ToggleButton Classes="icon" CommandParameter="rect"
+                            IsChecked="{Binding IsRectangleTool, Mode=OneWay}"
+                            Command="{Binding SetToolCommand}"
+                            ToolTip.Tip="{l:Loc Annotate.ToolRectTip}">
+                <materialIcons:MaterialIcon Kind="RectangleOutline" Width="20" Height="20"
+                                            Foreground="{Binding $parent[ToggleButton].Foreground}" />
+              </ToggleButton>
+            </StackPanel>
+          </Border>
+        </StackPanel>
 
-        <TextBlock Grid.Column="3" Text="{l:Loc Annotate.Label}" VerticalAlignment="Center" Opacity="0.7" />
-        <ComboBox Grid.Column="4" x:Name="LabelBox" IsEditable="True" MinWidth="150" />
+        <!-- 右侧：标签 → 视图 → 编辑/保存 -->
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2"
+                    VerticalAlignment="Center" Margin="28,0,0,0">
+          <TextBlock Text="{l:Loc Annotate.Label}" FontSize="14" Opacity="0.7"
+                     VerticalAlignment="Center" Margin="0,0,10,0" />
+          <ComboBox Width="150" FontSize="14" IsEditable="True"
+                    ItemsSource="{Binding LabelNames}"
+                    Text="{Binding ActiveLabel}"
+                    ToolTip.Tip="{l:Loc Annotate.LabelTip}" />
 
-        <TextBlock Grid.Column="5" x:Name="FileText" VerticalAlignment="Center"
-                   TextTrimming="CharacterEllipsis" MaxWidth="260" Opacity="0.8" />
+          <Border Width="1" Height="26" Margin="8,0" VerticalAlignment="Center"
+                  Background="{DynamicResource PanelBorderBrush}" />
 
-        <Button Grid.Column="7" Content="{l:Loc Annotate.AISettings}" Click="OnAutoLabelOptions" />
-        <Button Grid.Column="8" Content="{l:Loc Annotate.AIRun}" Click="OnAutoLabel" />
-        <Button Grid.Column="9" Content="{l:Loc Annotate.DeleteSelected}" Click="OnDelete" />
-        <Button Grid.Column="10" Content="{l:Loc Common.Save}" Click="OnSave" IsDefault="True" />
-        <Button Grid.Column="11" Content="{l:Loc Annotate.SaveAndNext}" Click="OnSaveAndNext" />
-        <Button Grid.Column="12" Content="{l:Loc Common.Close}" Click="OnClose" />
+          <Button Classes="icon" Click="OnFitToWindow" ToolTip.Tip="{l:Loc Annotate.FitTip}">
+            <materialIcons:MaterialIcon Kind="FitToScreen" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon" Command="{Binding UndoCommand}" ToolTip.Tip="{l:Loc Annotate.UndoTip}">
+            <materialIcons:MaterialIcon Kind="Undo" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon" Command="{Binding RedoCommand}" ToolTip.Tip="{l:Loc Annotate.RedoTip}">
+            <materialIcons:MaterialIcon Kind="Redo" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon" Command="{Binding SetupAutoLabelCommand}"
+                  ToolTip.Tip="{Binding AutoLabelSetupText}">
+            <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon accent" Command="{Binding AutoLabelCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.AutoLabelTip}">
+            <materialIcons:MaterialIcon Kind="AutoFix" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+
+          <Border Width="1" Height="26" Margin="8,0" VerticalAlignment="Center"
+                  Background="{DynamicResource PanelBorderBrush}" />
+
+          <Button Classes="icon danger" Command="{Binding DeleteShapeCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.DeleteTip}">
+            <materialIcons:MaterialIcon Kind="Delete" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon success" Command="{Binding SaveCommand}" ToolTip.Tip="{l:Loc Annotate.SaveTip}">
+            <materialIcons:MaterialIcon Kind="ContentSave" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon success" Command="{Binding SaveAndContinueCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.SaveAndNextTip}">
+            <materialIcons:MaterialIcon Kind="ContentSaveMove" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon" IsCancel="True" Click="OnClose" ToolTip.Tip="{l:Loc Annotate.CloseTip}">
+            <materialIcons:MaterialIcon Kind="Close" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- AI 候选条：只在有未确认的预标注结果时出现 -->
+    <Border DockPanel.Dock="Top" Padding="10,6"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource PanelBorderBrush}"
+            IsVisible="{Binding HasPendingBoxes}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border Background="#33FFB021" CornerRadius="3" Padding="6,1">
+            <TextBlock Text="{l:Loc Annotate.PendingBadge}" FontSize="13" Foreground="#FFB021" />
+          </Border>
+          <TextBlock Text="{Binding PendingSummary}" FontSize="13" Opacity="0.75"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+          <Button Classes="icon success" Command="{Binding AcceptHighConfidencePendingCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.AcceptConfidentTip}">
+            <materialIcons:MaterialIcon Kind="CheckCircle" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon success" Command="{Binding AcceptAllPendingCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.AcceptAllTip}">
+            <materialIcons:MaterialIcon Kind="CheckAll" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+          <Button Classes="icon danger" Command="{Binding DiscardAllPendingCommand}"
+                  ToolTip.Tip="{l:Loc Annotate.DiscardTip}">
+            <materialIcons:MaterialIcon Kind="Delete" Width="20" Height="20"
+                                        Foreground="{Binding $parent[Button].Foreground}" />
+          </Button>
+        </StackPanel>
       </Grid>
     </Border>
 
-    <controls:AnnotationCanvas Grid.Row="1" x:Name="Board" />
-
-    <Border Grid.Row="2" Padding="10,6" BorderThickness="0,1,0,0"
-            BorderBrush="{DynamicResource MaterialDesignDivider}">
-      <StackPanel Spacing="6">
-        <StackPanel x:Name="CandidateBar" Orientation="Horizontal" Spacing="8" IsVisible="False">
-          <TextBlock x:Name="CandidateText" VerticalAlignment="Center" FontWeight="SemiBold" />
-          <Button Content="{l:Loc Annotate.AcceptAll}" Click="OnAcceptAll" />
-          <Button x:Name="AcceptConfidentButton" Content="≥0.5" Click="OnAcceptConfident" />
-          <Button Content="{l:Loc Annotate.Discard}" Click="OnDiscardCandidates" />
-        </StackPanel>
-        <TextBlock x:Name="HintText" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-      </StackPanel>
+    <Border DockPanel.Dock="Bottom" Padding="8,4"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource PanelBorderBrush}">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock Text="{Binding Status}" FontSize="13" Opacity="0.75"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding ShapeCountText}" FontSize="13" Opacity="0.6"
+                   VerticalAlignment="Center" Margin="12,0,0,0" />
+        <TextBlock Grid.Column="2" Text="{Binding DirtyText}" FontSize="13" Opacity="0.6"
+                   VerticalAlignment="Center" Margin="12,0,0,0" />
+      </Grid>
     </Border>
-  </Grid>
+
+    <Grid Margin="8" ColumnDefinitions="*,250" ColumnSpacing="8">
+      <Border BorderThickness="1" CornerRadius="4" ClipToBounds="True"
+              Background="{DynamicResource CanvasBackgroundBrush}"
+              BorderBrush="{DynamicResource PanelBorderBrush}">
+        <controls:AnnotationCanvas Name="Canvas"
+                                   Source="{Binding CurrentImage}"
+                                   Background="{DynamicResource CanvasBackgroundBrush}" />
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="4">
+        <!-- 标题行右侧：选中形状的类别下拉（选一个即改类别）+ 删除按钮 -->
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                      Spacing="2" VerticalAlignment="Center">
+            <ComboBox Width="124" FontSize="14"
+                      IsEnabled="{Binding HasSelectedShape}"
+                      ItemsSource="{Binding LabelNames}"
+                      SelectedItem="{Binding SelectedShapeLabel}"
+                      ToolTip.Tip="{l:Loc Annotate.ShapeLabelTip}" />
+            <Button Classes="icon danger" IsEnabled="{Binding HasSelectedShape}"
+                    Command="{Binding DeleteShapeCommand}"
+                    ToolTip.Tip="{l:Loc Annotate.DeleteTip}">
+              <materialIcons:MaterialIcon Kind="Delete" Width="20" Height="20"
+                                          Foreground="{Binding $parent[Button].Foreground}" />
+            </Button>
+          </StackPanel>
+          <TextBlock Text="{l:Loc Annotate.ShapesHeader}" FontSize="14" Opacity="0.7"
+                     VerticalAlignment="Center" />
+        </DockPanel>
+
+        <Border Grid.Row="1" BorderThickness="1" CornerRadius="4"
+                BorderBrush="{DynamicResource PanelBorderBrush}">
+          <ListBox ItemsSource="{Binding Shapes}"
+                   SelectedItem="{Binding SelectedShape}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:AnnotationShapeRow">
+                <TextBlock Text="{Binding Summary}" FontSize="14"
+                           TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
+
+        <!-- AI 候选：逐条接受/丢掉 -->
+        <Border Grid.Row="2" BorderThickness="1" CornerRadius="4"
+                IsVisible="{Binding HasPendingBoxes}"
+                BorderBrush="{DynamicResource PanelBorderBrush}">
+          <StackPanel>
+            <TextBlock Text="{l:Loc Annotate.PendingHeader}" FontSize="13" Opacity="0.7"
+                       Margin="8,6,8,4" />
+            <ListBox MaxHeight="180" ItemsSource="{Binding PendingBoxes}"
+                     Background="Transparent" BorderThickness="0">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:AiPendingBoxRow">
+                  <Grid ColumnDefinitions="*,Auto,Auto" Margin="2,2">
+                    <TextBlock Text="{Binding Label}" FontSize="13"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding ScoreText}"
+                               FontSize="13" Opacity="0.6" Margin="6,0"
+                               VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
+                      <Button Classes="icon success" Width="30" Height="30"
+                              Command="{Binding AcceptCommand}"
+                              ToolTip.Tip="{l:Loc Annotate.AcceptOneTip}">
+                        <materialIcons:MaterialIcon Kind="CheckCircle" Width="18" Height="18"
+                                                    Foreground="{Binding $parent[Button].Foreground}" />
+                      </Button>
+                      <Button Classes="icon danger" Width="30" Height="30"
+                              Command="{Binding RejectCommand}"
+                              ToolTip.Tip="{l:Loc Annotate.RejectOneTip}">
+                        <materialIcons:MaterialIcon Kind="Close" Width="18" Height="18"
+                                                    Foreground="{Binding $parent[Button].Foreground}" />
+                      </Button>
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Grid>
+  </DockPanel>
 
 </Window>

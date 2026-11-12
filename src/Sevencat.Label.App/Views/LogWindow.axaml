@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Sevencat.Label.App.ViewModels"
+        xmlns:l="using:Sevencat.Label.App.Localization"
+        x:Class="Sevencat.Label.App.Views.LogWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{l:Loc Label.Log}"
+        Width="900" Height="560"
+        MinWidth="520" MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="*,Auto" Margin="12" RowSpacing="8">
+    <Border Grid.Row="0" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}"
+            CornerRadius="6" Padding="8">
+      <ScrollViewer x:Name="LogScroll"
+                    HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto">
+        <SelectableTextBlock Text="{Binding LogText}"
+                             FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                             TextWrapping="NoWrap" />
+      </ScrollViewer>
+    </Border>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="{l:Loc Label.ClearLog}" Click="OnClear" />
+      <Button Content="{l:Loc Common.Close}" Click="OnClose" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+
+</Window>

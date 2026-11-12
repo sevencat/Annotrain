@@ -13,7 +13,7 @@ public static class AppPaths
 
     public static string LogDirectory => AppDataPaths.LogDirectory;
 
-    /// <summary>旧版设置文件；新版配置存数据库（<see cref="AppDataPaths.SettingsDatabasePath"/>）。</summary>
+    /// <summary>旧版设置文件；新版配置存数据库（<see cref="AppDataPaths.ProjectDatabasePath"/>）。</summary>
     public static string SettingsFile => Path.Combine(ConfigDirectory, "settings.json");
 
     /// <summary>创建目录；放在进程启动最早期调用。</summary>

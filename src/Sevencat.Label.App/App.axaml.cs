@@ -3,12 +3,14 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Localization;
 using Sevencat.Label;
 using Sevencat.Label.App.ViewModels;
 using Sevencat.Label.App.Views;
 using Sevencat.Label.Server;
+using Sevencat.Label.Server.Data;
 
 namespace Sevencat.Label.App;
 
@@ -21,9 +23,24 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        string[]? args = (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Args;
+
+        // --open / --annotate 给的是数据目录，与 --data 等价（库、日志都落这里）
+        AppDataPaths.Initialize(
+            AppDataPaths.ReadArgument(args, AppDataPaths.DataArgument)
+            ?? AppDataPaths.ReadArgument(args, "--open")
+            ?? AppDataPaths.ReadArgument(args, "--annotate"));
+
+        // 库路径启动时定一次（--db / ANNOTRAIN_DB / 数据目录里的 annotrain.db）：
+        // 文件不在就当场建空库，容器里的 IFreeSql 单例、配置、账号、项目都指向它
+        TinyLabelDatabase.Initialize(AppDataPaths.ResolveDatabasePath(args));
+
         var services = new ServiceCollection();
         services.AddAnnotrainCore("label");
         services.AddAnnotrainLabel();
+
+        // 账号窗口直接读库（表 web_users），和 Web 端共用同一个连接池
+        services.AddSingleton<WebUserStore>();
         Services = services.BuildServiceProvider();
 
         // 语言：设置里存 zh/en，空值跟随系统
@@ -34,7 +51,10 @@ public partial class App : Application
                 : settings.Language);
 
         ILogger<App> logger = Services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
-        logger.LogInformation("标注应用启动，数据目录：{Directory}", AppDataPaths.DataDirectory);
+        logger.LogInformation(
+            "标注应用启动，数据目录：{Directory}，数据库：{Database}",
+            AppDataPaths.DataDirectory,
+            TinyLabelDatabase.CurrentPath);
 
         // 标注 Web 端：跟着桌面端起停，只绑本机回环；端口被占用时只记日志，不影响桌面端使用
         LabelWebServer? webServer = StartWebServer(logger);
@@ -46,11 +66,11 @@ public partial class App : Application
             desktop.MainWindow = window;
 
             // --open <数据目录>：启动后直接读这个目录里的项目列表，便于从命令行/快捷方式进入
-            if (ReadArgument(desktop.Args, "--open") is { } folder)
+            if (AppDataPaths.ReadArgument(desktop.Args, "--open") is { } folder)
             {
                 window.Opened += async (_, _) => await viewModel.OpenWorkspaceAsync(folder);
             }
-            else if (ReadArgument(desktop.Args, "--annotate") is { } annotateFolder)
+            else if (AppDataPaths.ReadArgument(desktop.Args, "--annotate") is { } annotateFolder)
             {
                 // --annotate <数据目录>：打开目录并直接进入首图标注（演示 / 自测用）
                 window.Opened += async (_, _) =>
@@ -92,7 +112,10 @@ public partial class App : Application
     /// <summary>启动进程内的标注 Web 服务；失败（端口被占等）只记日志，桌面端照常用。</summary>
     private LabelWebServer? StartWebServer(ILogger logger)
     {
-        ServerOptions options = new() { DataDirectory = AppDataPaths.DataDirectory };
+        ServerOptions options = new()
+        {
+            DataDirectory = Path.GetDirectoryName(TinyLabelDatabase.CurrentPath) ?? AppDataPaths.DataDirectory,
+        };
 
         try
         {
@@ -114,21 +137,4 @@ public partial class App : Application
         }
     }
 
-    private static string? ReadArgument(string[]? args, string name)
-    {
-        if (args is null)
-        {
-            return null;
-        }
-
-        for (int index = 0; index < args.Length - 1; index++)
-        {
-            if (string.Equals(args[index], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[index + 1];
-            }
-        }
-
-        return null;
-    }
 }

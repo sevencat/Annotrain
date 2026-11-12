@@ -26,8 +26,16 @@ public class ProjectCreateTests
         string databasePath = Path.Combine(workspace.Root, TinyLabelProjectCatalog.DefaultDatabaseFile);
         Assert.True(File.Exists(databasePath), $"数据库文件不存在：{databasePath}");
 
-        byte[] header = File.ReadAllBytes(databasePath);
-        Assert.True(header.Length >= 16, $"数据库文件只有 {header.Length} 字节（SQLite 头缺失，探测会失败）");
+        // 库连接是进程内常驻的（TinyLabelDatabase.Current），读文件头要按共享读打开
+        using var stream = new FileStream(
+            databasePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+
+        byte[] header = new byte[16];
+        int read = stream.Read(header, 0, header.Length);
+        Assert.True(read >= 16, $"数据库文件只有 {read} 字节（SQLite 头缺失，探测会失败）");
 
         var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
         TinyLabelProjectSummary summary =

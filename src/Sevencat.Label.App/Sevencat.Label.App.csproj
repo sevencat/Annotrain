@@ -26,6 +26,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Material.Avalonia" />
+    <PackageReference Include="Material.Icons.Avalonia" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Sevencat.ImageFacade" />
     <PackageReference Include="Sevencat.ImageFacade.SkiaSharp" />

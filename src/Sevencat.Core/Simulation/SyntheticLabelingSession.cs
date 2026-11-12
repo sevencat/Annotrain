@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -57,7 +56,12 @@ public static class SyntheticLabelingSession
         var random = new Random(options.Seed ?? Environment.TickCount);
         var splits = new List<string>();
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath);
+        using TinyLabelDatabase database = string.Equals(
+            databasePath,
+            TinyLabelDatabase.CurrentPath,
+            StringComparison.OrdinalIgnoreCase)
+            ? TinyLabelDatabase.Current
+            : TinyLabelDatabase.Open(databasePath);
 
         long projectId = (long)database.Orm.Insert(new ProjectEntity
         {
@@ -87,7 +91,7 @@ public static class SyntheticLabelingSession
             ct.ThrowIfCancellationRequested();
 
             SyntheticImage image = images[index];
-            string relative = $"projects/{projectId.ToString(CultureInfo.InvariantCulture)}/{image.FileName}";
+            string relative = $"{TinyLabelWorkspace.ProjectPrefix(projectId)}/{image.FileName}";
 
             using (var payload = new MemoryStream(image.Png))
             {

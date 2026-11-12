@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Annotation;
@@ -72,13 +71,17 @@ public sealed class DatasetImportService(
         ClassCatalog classes = MergeClasses(splits, warnings);
 
         Directory.CreateDirectory(options.Destination.Root);
-        string databasePath = Path.Combine(options.Destination.Root, "annotrain.db");
+
+        // 导入只写当前工作库（桌面端就是当前数据目录，CLI 的 --output 在启动时定）：
+        // 目标目录还没有库就先建一个，已经定过就复用——不另开连接往第二个库里写
+        string databasePath = TinyLabelWorkspace.EnsureDatabase(options.Destination);
+        TinyLabelDatabase database = TinyLabelDatabase.Current;
         IBlobStore destination = registry.Get(options.Destination);
 
-        using TinyLabelDatabase database = TinyLabelDatabase.Open(databasePath);
-
         long projectId = CreateProject(database, options, format, classes);
-        string prefix = $"projects/{projectId.ToString(CultureInfo.InvariantCulture)}";
+
+        // 项目目录先建好，导空数据集时也能在资源管理器里看到 projects/{id}/
+        TinyLabelWorkspace.EnsureProjectDirectory(options.Destination, projectId);
 
         int images = 0, skipped = 0, annotated = 0, boxes = 0, dropped = 0;
         var importedSplits = new List<string>(splits.Count);
@@ -122,7 +125,8 @@ public sealed class DatasetImportService(
                     continue;
                 }
 
-                string relative = $"{prefix}/{split.Name}/{fileName}";
+                // 原图统一进 projects/{id}/images/（缩略图在旁边的 thumbs/）
+                string relative = $"{TinyLabelWorkspace.ImagePrefix(projectId)}/{split.Name}/{fileName}";
 
                 await destination
                     .WriteAsync(new StorageKey(options.Destination, relative), new MemoryStream(payload), ct)
