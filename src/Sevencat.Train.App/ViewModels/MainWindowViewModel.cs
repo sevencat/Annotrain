@@ -123,6 +123,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly ObservableCollection<double> _lossValues = [];
     private readonly ObservableCollection<double> _map50Values = [];
     private readonly ObservableCollection<double> _map5095Values = [];
+    private readonly Axis _epochAxis;
 
     /// <summary>曲线序列：loss 挂第 2 根 Y 轴（右），两个 mAP 挂左轴。</summary>
     public ISeries[] Series { get; }
@@ -232,7 +233,11 @@ public partial class MainWindowViewModel : ObservableObject
             CreateAxis("loss", minStep: null, AxisPosition.End, showSeparatorLines: false),
         ];
 
-        XAxes = [CreateAxis("epoch", minStep: 1, AxisPosition.Start)];
+        _epochAxis = CreateAxis("epoch", minStep: 1, AxisPosition.Start, minLimit: 0);
+
+        // 空图时给个 0~10 的正向刻度，出点后交回自动范围
+        _epochAxis.MaxLimit = 10;
+        XAxes = [_epochAxis];
 
         Series =
         [
@@ -757,6 +762,13 @@ public partial class MainWindowViewModel : ObservableObject
         _lossValues.Add(loss);
         _map50Values.Add(map50);
         _map5095Values.Add(map5095);
+
+        // 有数据就交回自动范围，否则刻度会一直被 0~10 卡住
+        if (_epochAxis.MaxLimit is not null)
+        {
+            _epochAxis.MaxLimit = null;
+        }
+
         HasChartData = true;
     }
 
@@ -766,6 +778,7 @@ public partial class MainWindowViewModel : ObservableObject
         _lossValues.Clear();
         _map50Values.Clear();
         _map5095Values.Clear();
+        _epochAxis.MaxLimit = 10;
         HasChartData = false;
     }
 

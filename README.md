@@ -4,10 +4,54 @@
 
 # Annotrain
 
-面向 **YOLOv8 / YOLO11 / RF-DETR** 的「标注 → 训练 → 检测验证」工作台，纯 C#，不依赖 Python 运行时。
+面向 **YOLOv8 / YOLO11 / RF-DETR** 的「标注 → 训练 → 导出 → 检测验证」桌面工作台：**纯 C#，不依赖 Python**。
 
 > 定位：个人 / 小团队自用的模型迭代工具。
 > 检测只用于验证训练出来的模型效果，**不作为对外推理服务，也不作为供其他系统集成的 SDK**。
+
+## 四个关键点
+
+### 1. 不依赖 Python
+
+- 训练、推理、导出全在 .NET 进程内完成：**TorchSharp（LibTorch）** 承担前向 / 反向 / 优化器，**Microsoft.ML.OnnxRuntime** 承担 ONNX 推理与验证。
+- 没有 Python 环境、没有 `pip`、没有 `ultralytics`；拷走 exe 目录就能跑（绿色部署）。
+- 训练循环、EMA、损失、数据增强、letterbox、NMS、ONNX 导出全部是 C# 代码，调试只需 dotnet 与 IDE。
+
+### 2. 标注和项目管理直接在数据库里
+
+- 项目 / 类别 / 图片 / 标注 / 状态 / 版本 / 备注全部存在一个 SQLite 文件 `annotrain.db` 里（TinyLabel 表结构），**不散落成成百上千个 json 文件**。
+- 配置也落库（`settings.db` 的 `settings` 表），换机器只拷 `data` 目录即可。
+- 好处很直接：项目列表、进度、待标注队列、训练用数据集都是一条 SQL 能查出来的；标注端与训练端读写同一份库，**不需要中间导出再训练**。
+- 需要外部格式时随时导出成 YOLO / COCO —— 库是主存储，目录格式只是出口。
+
+### 3. 训练不依赖固定目录格式
+
+- 训练入口统一抽象成 `IDatasetStore`：**YOLO 目录 / COCO（RF-DETR）目录 / SQLite 标注库** 三种形态都能直接训练。
+- 训练端打开数据集自动探测形态（`data.yaml` / `_annotations.coco.json` / `annotrain.db`），也可以手动指定：
+  `数据集 [YOLO] [RF-DETR] [TinyLabel]`。TinyLabel 会列出库里的项目让你选。
+- 模型可选 `YOLOv8` / `YOLOv11` / `RF-DETR`；训练完可**导出 ONNX**（检测直接用）或**导出 safetensors + `model.json`**（架构、类别、输入尺寸）。
+
+### 4. Web 标注 / Web 训练管理（进行中）
+
+- 标注端已经内置 Web 服务：`http://127.0.0.1:5180`（登录、项目、图片、标注、统计都能在浏览器里做）。
+- 规划：训练端 Web 页面（任务列表、实时日志、指标曲线、远程启停），之后桌面端只做「本地壳 + 离线兜底」，
+  标注、训练排队与结果查看都在网页上完成。
+
+## 界面截图
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screens/label-main.png" alt="标注端主界面"><br>
+      <sub><b>标注端</b>：左侧项目（直接读 SQLite）、右侧缩略图 / 标注状态 / 进度</sub></td>
+    <td width="50%"><img src="docs/screens/label-canvas.png" alt="标注画布"><br>
+      <sub><b>标注画布</b>：拖拽画框、选中改标签、右侧形状列表，保存即写回 <code>annotations.DocJson</code></sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screens/train-main.png" alt="训练端主界面"><br>
+      <sub><b>训练端</b>：数据集（YOLO / RF-DETR / TinyLabel）、模型（YOLOv8 / YOLO11 / RF-DETR）、
+      训练参数、ONNX / safetensors 导出、LiveCharts 双轴曲线（mAP 左 / loss 右）</sub></td>
+  </tr>
+</table>
 
 仓库用**两个解决方案**分别管两条线，互不编译依赖，只共享 `Sevencat.Core`：
 
@@ -19,10 +63,8 @@
 ## 技术路线
 
 - **纯 C# 训练**：TorchSharp（LibTorch）承担计算；训练循环、EMA、损失、数据增强、ONNX 导出全在进程内，不用 Python。
-- **代码复用**，不重写：
-  - 标注参考 `F:\code\TinyLabel\src`（画布 `AnnotationCanvas`、标注模型、原子写盘、Minimal API 服务）；
-  - 训练参考 `F:\code\OmniTensorSharp`（YOLO/RF-DETR 网络、Trainer、导出、推理）。
-  - 能复制的直接复制，只做命名空间改名与**存储层接口化**。
+- **代码复用**，不重写：标注端的画布 `AnnotationCanvas`、标注模型、原子写盘、Minimal API 服务参考 TinyLabel 项目；
+  训练侧的网络结构、Trainer、EMA、导出与推理参考 OmniTensorSharp 项目。复制时只改命名空间，并做**存储层接口化**。
 - **存储必须抽象**：YOLO / COCO / RF-DETR 的目录探测、标注读写、数据集读取全部收敛到接口；画布与训练器都不认识具体格式。
 - **标注端与训练端共用一套存储**：图片、标注、描述文件都走同一个 `IBlobStore`（`file://` / 将来 `s3://`），
   除本地实现外代码里不出现 `File.*` / `Directory.*`。
@@ -138,20 +180,26 @@ Sevencat.Label.App.exe --annotate <数据目录>    # 打开目录并直接进�
 
 单页，不切 tab：
 
-- **上面工具栏**：打开数据集（YOLO / COCO / 数据库都能读）、epochs / batch / imgsz / 输出目录、
-  开始训练 / 停止，最右边是「检测…」。
-- **中间图表**：训练曲线（loss 与 mAP），每个 epoch 结束刷新一个点。
-- **下面状态**：进度条、当前状态与参数、数据集统计、日志。
+- **数据集**：`YOLO` / `RF-DETR` / `TinyLabel` 三个入口。TinyLabel 选 `annotrain.db` → 列出库里的项目 → 选一个训练；
+  文件框停在上次用过的库目录，项目 Id 记进配置，重启自动恢复上次项目。
+- **控制**：开始训练 / 暂停 / 继续 / 结束 / 检测…；右侧只读显示 epochs / batch / imgsz，点「训练参数」进对话框改。
+- **输出目录**：`[设置] [打开]` + 产物 `best.safetensors`；「打开」直接在资源管理器里打开（目录不存在会先建）。
+- **模型**：`YOLOv8` / `YOLOv11` / `RF-DETR`。YOLO 走 `YoloDatasetTrainingRunner`；RF-DETR 走 `DetrDatasetTrainingRunner`
+  （先把数据集导出成临时 YOLO 目录，再交给 DETR 会话，输入固定 224）。
+- **导出**：`导出 ONNX` → `{输出目录}/export/best.onnx`；`导出 safetensors` → `best.safetensors` + `model.json`
+  （架构 / 家族 / 类别 / 输入输出尺寸 / best 指标）。导出过 ONNX 后，检测按钮会**优先用这份模型**。
+- **图表**：LiveCharts 双 Y 轴（mAP 左轴 0~1、loss 右轴），逐 epoch 追加，没数据时显示提示文字。
 
 训练产物写在输出目录：`best.safetensors` / `model.safetensors` / `model-ema.safetensors` /
-`optimizer.bin`（续训用）/ `train.json`（超参与每轮指标）。
+`optimizer.bin`（续训用）/ `train.json`（超参与每轮指标）。RF-DETR 产物同名，架构记成 `rfdetr-detect-N`。
 
 ### 检测验证
 
-点工具栏「检测…」：选一张图片 → 用 ONNX 模型推理 → 弹对话框，结果框直接叠在图上，
-右侧列出类别与置信度。首次检测会让你挑 `.onnx`，之后记在用户配置里。
+点「检测…」：选一张图片 → ONNX 推理 → 弹对话框，结果框直接叠在图上，右侧列出类别与置信度。
+模型顺序：**最近导出的 `best.onnx`** → 设置里的 `AutoLabelModelPath` → 弹框手选。
 
 推理与标注端的 AI 标注共用 `YoloOnnxRunner`（letterbox + 解码 + NMS）。
+> 目前检测只解析 YOLO 输出；RF-DETR 导出的 `boxes / logits` 需要专门的 DETR 后处理（规划中）。
 
 ```powershell
 Sevencat.Train.App.exe --open <数据集目录>   # 启动即打开数据集
@@ -169,12 +217,12 @@ Sevencat.Train.App.exe --simulate %TEMP%\annotrain-sim-demo --count 20 --width 6
 | --- | --- | --- |
 | 1 生成 | 随机画正方形 / 三角形 / 圆形，**平铺输出且不带标注** | `flat/*.png` |
 | 2 导入 + 标注 | 建数据库项目、写图片、把每个形状框出来（±2px 抖动模拟手标） | `dataset/annotrain.db`、`dataset/projects/1/*` |
-| 3 训练（直接读库） | 训练程序按 `images.Split` 装载数据（当前是干跑：完整装载 + 校验 + 摘要） | `training-db/` |
+| 3 训练（直接读库） | 真训练入口按 `images.Split` 装载数据（YOLO / RF-DETR 由 Family 分派） | `training-db/` |
 | 4 导出 + 训练 | 导出 YOLO（`data.yaml` / `images/` / `labels/` / `classes.txt`），再从导出目录训练一遍 | `export-yolo/`、`training-yolo/` |
 | 5 验证 | 用生成时的真值反查标注与导出结果 | `simulation-report.txt` |
 
-退出码 `0` 表示验证通过；`2` 表示有缺失 / 多余 / 超容差。真实训练（YOLO / RF-DETR 引擎）在 M4 接入，
-替换 `IDatasetTrainingRunner` 的实现即可，流程与验证都不用改。同一套流程也有单测：
+退出码 `0` 表示验证通过；`2` 表示有缺失 / 多余 / 超容差。模拟流程里现在也走真训练入口
+（`IDatasetTrainingRunner`，按 Family 分派 YOLO / RF-DETR），想快速跑通用 `--epochs 1`。同一套流程也有单测：
 `tests/Sevencat.Train.Engine.Tests/SimulationPipelineTests.cs`。
 
 ## 解决方案结构
@@ -234,13 +282,14 @@ dotnet test Sevencat.Train.sln
 
 ## 当前状态
 
-M0（骨架）已完成：两个解决方案各 5 个项目，Avalonia 12.1.5 + Material.Avalonia 3.21.0 主题已接入，
-DI / 配置 / 日志（NLog 按天落盘 + 界面日志面板）可用，两个桌面应用可启动。
+- **标注端**：项目管理、图片导入 / 数据集导入、画布标注、AI 标注、导出 YOLO / COCO、Web 端都已可用；
+  数据全在 `data/annotrain.db`，配置在 `data/settings.db`。
+- **训练端**：YOLOv8 / YOLO11 / RF-DETR 训练已接入（TorchSharp），开始 / 暂停 / 继续 / 结束可用；
+  产物支持 safetensors 与 ONNX 导出，检测直接用导出的模型；曲线用 LiveCharts，界面为 Material 主题。
+- **规划中**：训练端 Web（任务队列 / 远程监控 / 日志与曲线）、RF-DETR 的 ONNX 后处理与自动标注、数据集版本对比。
 
-M1（存储抽象）进行中：`IBlobStore`（本地后端 + 按 scheme 的注册表）、YOLO / LabelMe / COCO codec、
-三种形态的格式探测与 Provider（yolo / coco / tinylabel）、统一打开入口 `DatasetStoreResolver` 已完成并有单测；
-`tinylabel` 的 SQLite 读写（`TinyLabelDatasetStore` + `DatabaseAnnotationStore`，乐观锁 + 多项目选择）也已可用。
-接下来是导出（DB → YOLO / RF-DETR）与项目表落库。
+技术栈：.NET 10、Avalonia 12.1.5、Material.Avalonia 3.21、TorchSharp（LibTorch）、Microsoft.ML.OnnxRuntime、
+FreeSql + SQLite、LiveCharts 2.1、NLog、CommunityToolkit.Mvvm。
 
 应用图标在 `assets/app.ico`（由 `docs/image_ico.png` 生成，含 16–256 多尺寸），两个 exe 与窗口都用它。
 
