@@ -38,6 +38,9 @@
 
   <ItemGroup Label="AI">
     <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <!-- 训练引擎：TorchSharp（LibTorch 绑定）+ CPU 原生包；CUDA 机器替换 libtorch-cpu 即可 -->
+    <PackageVersion Include="TorchSharp" Version="0.107.0" />
+    <PackageVersion Include="libtorch-cpu" Version="2.10.0" />
   </ItemGroup>
 
   <ItemGroup Label="Test">

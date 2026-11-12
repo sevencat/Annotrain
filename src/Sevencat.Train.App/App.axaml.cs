@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core.Infrastructure;
 using Sevencat.Train.App.ViewModels;
+using Sevencat.Train.Engine;
 using Sevencat.Train.App.Views;
 
 namespace Sevencat.Train.App;
@@ -20,6 +21,10 @@ public partial class App : Application
     {
         var services = new ServiceCollection();
         services.AddAnnotrainCore("train");
+
+        // 真训练引擎（TorchSharp）：替换 Core 里的干跑实现，必须在 AddAnnotrainCore 之后。
+        services.AddAnnotrainTrainingEngine();
+
         Services = services.BuildServiceProvider();
 
         ILogger<App> logger = Services.GetRequiredService<ILoggerFactory>().CreateLogger<App>();
@@ -28,7 +33,15 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var viewModel = ActivatorUtilities.CreateInstance<MainWindowViewModel>(Services);
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            var window = new MainWindow { DataContext = viewModel };
+            desktop.MainWindow = window;
+
+            // --open <数据集目录>：启动即打开数据集，省去一次选择
+            if (ReadArgument(desktop.Args, "--open") is { } dataset)
+            {
+                window.Opened += async (_, _) => await viewModel.OpenDatasetAsync(dataset);
+            }
+
             desktop.Exit += (_, _) =>
             {
                 logger.LogInformation("训练应用退出");
@@ -37,5 +50,23 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static string? ReadArgument(string[]? args, string name)
+    {
+        if (args is null)
+        {
+            return null;
+        }
+
+        for (int index = 0; index < args.Length - 1; index++)
+        {
+            if (string.Equals(args[index], name, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[index + 1];
+            }
+        }
+
+        return null;
     }
 }

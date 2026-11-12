@@ -8,8 +8,8 @@
 | --- | --- | --- | --- |
 | Avalonia | 12.1.5 | 已用 | M0 已验证可构建、可启动；最新为 12.1.6 |
 | Material.Avalonia | 3.21.0 | 已用 | 与 Avalonia 12.1.5 无冲突（依赖 Material.Styles） |
-| Sevencat.ImageFacade / .SkiaSharp | 0.3.0 | 已引用 | 界面渲染；训练数据管线用其纯托管软后端（Sdcb.SimdCodecs） |
-| 训练底座 | TorchSharp 0.107 + libtorch-cpu 2.10 | 拟定 | 纯 C#，无 Python；CUDA 换 `libtorch-cuda-12.8-win-x64` |
+| Sevencat.ImageFacade / .SkiaSharp | 0.3.0 | 已引用 | 界面渲染与训练数据管线共用 SkiaSharp 后端（exe 入口 `ImageRuntime.Use` 注册），不用 Sdcb 软后端 |
+| 训练底座 | TorchSharp 0.107 + libtorch-cpu 2.10 | 已引用 | 纯 C#，无 Python；引擎在 `Sevencat.Train.Engine`，CUDA 换 `libtorch-cuda-12.8-win-x64` |
 | Web 服务 | ASP.NET Core Minimal API（类库内嵌） | 已定 | 直接沿用 TinyLabel.Server 的 `ServerHost` 方案 |
 | Web 页面 | gzip 内嵌静态资源 | 已定 | 沿用 TinyLabel 的 `WebPageEndpoints`，发布不带 wwwroot |
 | 数据库 | SQLite（项目/用户/任务元数据） | 已定 | 沿用 TinyLabel.Server 的 `ServerDatabase` |

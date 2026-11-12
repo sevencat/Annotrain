@@ -11,8 +11,8 @@
 | M1 存储抽象 | 两条线 | 未开始 | | | 地基：IBlobStore + 格式接口 |
 | M2 标注闭环 | Label | 未开始 | | | 迁移 TinyLabel 画布 |
 | M3 标注 Web | Label | 未开始 | | | 迁移 TinyLabel.Server |
-| M4 训练引擎 | Train | 未开始 | | | 迁移 OmniTensorSharp |
-| M5 训练桌面 | Train | 未开始 | | | 队列/参数/日志/产物 |
+| M4 训练引擎 | Train | 进行中 | 2026-11-12 | | 代码已迁入，数据层接口化首版完成 |
+| M5 训练桌面 | Train | 进行中 | 2026-11-12 | | 单页训练已能跑真训练，队列/产物管理未做 |
 | M6 检测验证 | Train | 未开始 | | | 推理与评估 |
 | M7 训练 Web | Train | 未开始 | | | 任务与日志流 |
 | M8 打磨 | 两条线 | 未开始 | | | 打包与优化 |
@@ -36,7 +36,7 @@
 | S-7 | M1 | `tinylabel` 形态（DB provider + DatabaseAnnotationStore） | 完成 | 表结构与 TinyLabel 最新版对齐（**主键自增 long**）；`images.Split` 缺失时自动补列；多项目库需指定 projectId |
 | S-8 | M1 | 形态转换（DB→YOLO/COCO、YOLO↔COCO） | 进行中 | DB→YOLO / RF-DETR 已通并有单测；YOLO↔COCO、附加脚本产物待补 |
 | S-9 | M1 | 自动检测 + 项目类型落库（Format/DescriptorPath/DetectedAt） | 进行中 | 探测与歧义选择已就绪；项目表落库在 M3 接入 |
-| S-10 | M1 | 端到端模拟流程（生成图 → 导入标注 → 训练 → 导出 → 验证） | 完成 | `Sevencat.Train.App --simulate <dir>`；训练阶段是干跑，M4 换 `IDatasetTrainingRunner` 实现 |
+| S-10 | M1 | 端到端模拟流程（生成图 → 导入标注 → 训练 → 导出 → 验证） | 完成 | `Sevencat.Train.App --simulate <dir>`；模拟流程仍用干跑实现（`SummaryTrainingRunner`），真训练引擎由 `AddAnnotrainTrainingEngine()` 覆盖注册 |
 | S-11 | M1 | 反向导入：现有 YOLO / RF-DETR 数据集 → 标注项目（图片 + 标注 + train/val） | 完成 | `DatasetImportService`（Core）；标注端 `LabelDatasetImportService` + `--import` CLI + 主窗口导入面板 |
 | S-12 | M1 | 项目管理 + 项目明细：左栏项目列表、右栏图片表格 | 完成 | `TinyLabelProjectCatalog` 列项目与统计；`LabelProjectBrowser` 按项目 Id 装载明细；导入目标固定为当前数据目录 |
 | S-13 | M2 | 单图标注对话框（画布 + 保存） | 完成 | `AnnotationCanvas`（矩形/选中/拖动/删除/缩放/适应窗口）+ `AnnotationWindow`；保存走 `DatabaseAnnotationStore`（乐观锁） |
@@ -51,15 +51,17 @@
 | W-3 | M3 | 内嵌页面与导出 | 未开始 | gzip 静态资源 |
 | W-4 | M3 | 桌面端服务面板 | 未开始 | 端口/状态/打开浏览器 |
 | W-5 | M3 | 项目管理：格式字段、自动检测、重新检测 | 未开始 | 与 S-9 共用探测实现 |
-| E-1 | M4 | Core/NN/Models/IO/Export 迁移 | 未开始 | 改命名空间 |
-| E-2 | M4 | Training（Trainer/Checkpoint/EMA）迁移 | 未开始 | |
-| E-3 | M4 | Data 层改造为 IDatasetStore | 未开始 | 关键任务 |
+| T-1 | M5 | 训练主界面（单页：工具栏 / 曲线 / 状态） | 完成 | `TrainingChart` 自绘 loss + mAP；干跑阶段图表显示占位提示 |
+| T-2 | M6 | 检测验证对话框（选图 → ONNX 推理 → 叠加显示） | 完成 | 复用 `YoloOnnxRunner`；模型路径记入 `AppSettings`，从工具栏进入 |
+| E-1 | M4 | Core/NN/Models/IO/Export 迁移 | 完成 | 全量复制到 `Sevencat.Train.Engine`（Core/Data/NN/Models/IO/Export/Training/Sessions），命名空间改为 `Sevencat.Train.Engine.*` |
+| E-2 | M4 | Training（Trainer/Checkpoint/EMA）迁移 | 完成 | Trainer/EMA/Checkpoint/CosineSchedule/损失/指标全部就位 |
+| E-3 | M4 | Data 层改造为 IDatasetStore | 进行中 | 新增 `YoloDatasetTrainingRunner`：样本走 `IDatasetStore`、图片字节走 `IBlobStore`；Path 版 `YoloDataset`/`CocoDataset` 仍保留给 Sessions 参考实现 |
 | E-4 | M4 | 模型结构与导出单测迁移 | 未开始 | 参数数量/键名/ONNX |
-| T-1 | M5 | 训练会话（YOLO/DETR）迁移 | 未开始 | |
+| T-1 | M5 | 训练会话（YOLO/DETR）迁移 | 完成 | 代码已迁入 `Sevencat.Train.Engine/Sessions`；界面走 runner 而非直接持有会话 |
 | T-2 | M5 | 任务队列与启停/续训 | 未开始 | 单任务独占 GPU |
-| T-3 | M5 | 参数表单与预设 | 未开始 | |
-| T-4 | M5 | 日志/指标曲线 | 未开始 | |
-| T-5 | M5 | 产物管理（safetensors/onnx） | 未开始 | |
+| T-3 | M5 | 参数表单与预设 | 进行中 | epochs/batch/imgsz/输出目录已接真训练；模型规模/家族/学习率/设备未上界面 |
+| T-4 | M5 | 日志/指标曲线 | 完成 | `TrainingRunOptions.Progress/Log` → 曲线按 epoch 追加，日志回填面板 |
+| T-5 | M5 | 产物管理（safetensors/onnx） | 进行中 | 训练产出 best/model/model-ema/optimizer.bin/train.json；界面未做登记与打开目录 |
 | D-1 | M6 | Predictor 迁移与单图推理 | 未开始 | |
 | D-2 | M6 | 目录/摄像头推理与可视化 | 未开始 | |
 | D-3 | M6 | GT 对比与漏检误检统计 | 未开始 | |
@@ -97,6 +99,8 @@
 | 2026-11-12 | README 加 banner 与作者图；`docs/image_ico.png` 生成 `assets/app.ico`（16–256 共 7 档）+ `assets/app.png`，两个 exe 用 `ApplicationIcon`、窗口用 AvaloniaResource | `UseWin32()` 不带渲染/排版后端，必须同时 `UseSkia().UseHarfBuzz()`，否则启动即崩 |
 | 2026-11-12 | 平台收紧为 Windows x64：`Directory.Build.props` 固定 `RuntimeIdentifier=win-x64`、`PlatformTarget=x64`；Avalonia 由 `UsePlatformDetect()` 改 `UseWin32()`；`PlatformGuard` 在 `Main` 最早期校验非 win-x64 弹窗退出 | 产出目录变为 `bin/<cfg>/net10.0/win-x64`，不再带 `.so`；F-6.4 改为只支持 Windows |
 | 2026-11-12 | 新增反向导入：`DatasetImportService` 读现有 YOLO（`data.yaml`）或 RF-DETR（扫 `train/valid/test` 下的 COCO json）数据集，图片复制到 `projects/{Id}/{split}/`，标注转 labelme JSON，split 落 `images.Split`；`valid`→`val`，多 split 类别取并集并重映射 classId，报告含每个 split 的图数与告警 | 标注端不再只能导出：`LabelDatasetImportService` 做策略校验（只允许 YOLO / COCO 作来源），新增 `--import` 命令行与主窗口「从现有数据集导入」面板；实测把 `--simulate` 导出的 6 图 / 11 框导回项目库，得到 train 5 / val 1、3 类，计数与源一致 |
+| 2026-11-12 | 训练端改为单页布局：工具栏（数据集 / epochs·batch·imgsz / 输出目录 / 开始·停止 / 检测）、中间自绘 `TrainingChart`（loss + mAP，无数据时占位提示）、底部进度条 + 状态 + 日志；检测验证收进工具栏：选图 → `YoloOnnxRunner` 推理 → `DetectWindow` 把框叠在图上并列出类别与置信度 | 不照抄 OmniTensorSharp 的多 tab；`--open <数据集>` 启动即加载；实测 YOLO 数据集打开正常，`--simulate` 干跑仍为 11 框通过 |
 | 2026-11-12 | 补齐标注端缺的功能：新建空项目（`TinyLabelProjectService` + `ProjectEditorWindow`）、标注窗口「保存并继续」自动领下一张待标注图、AI 标注（`Microsoft.ML.OnnxRuntime` 加载 YOLO `.onnx`，letterbox → 解码 → NMS → 类别映射，候选以黄色虚线显示，接受全部 / ≥0.5 / 丢弃）；模型路径与置信度写入 `AppSettings`，启动自动回到上次数据目录 | 对齐 TinyLabel 的「AI 方案设置 + AI 预标注 + 候选确认」；`YoloOutputDecoder` 5 个单测覆盖坐标反变换、阈值、同类别 NMS、类别映射、转置输出；实测 4 图项目打开标注窗口稳定 |
 | 2026-11-12 | 标注端改为「左项目管理 / 右项目明细」两栏：`TinyLabelProjectCatalog` 直接读库列出项目（图数 / 已标数 / split），`LabelProjectBrowser` 按项目 Id 装载；右侧图片表格每行带「标注」按钮，顶部「开始标注」作用于选中行；新增自写精简画布 `AnnotationCanvas`（矩形 / 选中 / 拖动 / 删除 / 滚轮缩放 / 适应窗口）与 `AnnotationWindow` 标注对话框，保存走 `DatabaseAnnotationStore` | 交互对齐 TinyLabel 的「列表 → 点进一张 → 标完关闭」；导入按钮改为弹窗，目标固定当前数据目录；新增 `--annotate <数据目录>` 直接进首图标注；实测 4 图项目打开标注窗口进程稳定、画布渲染正常 |
 | 2026-11-12 | 标注端补上「打开项目 + 浏览」：`LabelProjectBrowser` 用 `DatasetStoreResolver` 打开 tinylabel 后一次性装载图片清单即关库（`ImageRef` 保留，字节按需读），界面左侧按 split 列图、右侧预览并用 `Viewbox + Canvas` 按原图像素坐标叠框；导入完成后自动打开目标项目并选中第一张 | 新增 `--open <项目目录>` 直接进项目；VM 的 `SelectedImage` 统一驱动预览（用户点击与程序预设同一路径）；实测打开导入项目：train 5 / val 1，首图 320×240 / 2 框，位图解码成功 |
+| 2026-11-12 | 训练引擎落地：OmniTensorSharp 的 Core/Data/NN/Models/IO/Export/Training/Train.App 训练会话共 97 个文件复制到 `Sevencat.Train.Engine`（`Core|Data|NN|Models|IO|Export|Training|Sessions`），命名空间统一为 `Sevencat.Train.Engine.*`；新增 `YoloDatasetTrainingRunner` 把 `IDatasetStore` 样本 → 归一化标签 → 批次 → 训练循环，图片字节走 `IBlobStore.OpenReadAsync`，产出 best/model/model-ema/optimizer.bin/train.json；图像后端统一由 exe 入口注册（`ImageRuntime.Use(new SkiaBackend())`），引擎只依赖 ImageFacade 抽象、不引任何编解码实现 | 训练程序 `AddAnnotrainTrainingEngine()` 替换干跑实现；工具栏 epochs/batch/imgsz 生效，`TrainingProgress` 驱动曲线、日志回填面板；新增 1 个真训练冒烟测试（4 图 / 1 epoch / 64px，约 1s 通过），测试进程同样注册 SkiaSharp |

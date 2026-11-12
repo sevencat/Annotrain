@@ -86,6 +86,29 @@ Sevencat.Label.App.exe --open <数据目录>        # 打开目录，列出项�
 Sevencat.Label.App.exe --annotate <数据目录>    # 打开目录并直接进第一张图的标注窗口
 ```
 
+## 训练程序界面
+
+单页，不切 tab：
+
+- **上面工具栏**：打开数据集（YOLO / COCO / 数据库都能读）、epochs / batch / imgsz / 输出目录、
+  开始训练 / 停止，最右边是「检测…」。
+- **中间图表**：训练曲线（loss 与 mAP），每个 epoch 结束刷新一个点。
+- **下面状态**：进度条、当前状态与参数、数据集统计、日志。
+
+训练产物写在输出目录：`best.safetensors` / `model.safetensors` / `model-ema.safetensors` /
+`optimizer.bin`（续训用）/ `train.json`（超参与每轮指标）。
+
+### 检测验证
+
+点工具栏「检测…」：选一张图片 → 用 ONNX 模型推理 → 弹对话框，结果框直接叠在图上，
+右侧列出类别与置信度。首次检测会让你挑 `.onnx`，之后记在用户配置里。
+
+推理与标注端的 AI 标注共用 `YoloOnnxRunner`（letterbox + 解码 + NMS）。
+
+```powershell
+Sevencat.Train.App.exe --open <数据集目录>   # 启动即打开数据集
+```
+
 ## 模拟流程（不用准备数据）
 
 不接真实数据也能把整条链路跑一遍：
@@ -118,7 +141,7 @@ Sevencat.Label.sln
 
 Sevencat.Train.sln
   src/Sevencat.Core/              （同一份源码，两个解决方案都包含）
-  src/Sevencat.Train.App/         训练程序（exe）：任务队列、参数、日志、检测验证页
+  src/Sevencat.Train.App/         训练程序（exe）：单页主界面（工具栏 / 曲线 / 状态）+ 检测验证对话框
   src/Sevencat.Train.Engine/      训练引擎：模型结构、数据管线、Trainer、导出、推理
   src/Sevencat.Train.Web/         训练 Web：任务列表、实时日志、指标
   tests/Sevencat.Train.Engine.Tests/  模型结构、损失、导出、数据集接口

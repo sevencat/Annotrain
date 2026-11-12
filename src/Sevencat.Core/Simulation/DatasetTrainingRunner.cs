@@ -10,9 +10,55 @@ namespace Sevencat.Core.Simulation;
 /// <summary>训练参数。</summary>
 /// <param name="Output">训练产物目录。</param>
 /// <param name="Splits">要训练的 split；为空时用数据集自带的。</param>
-public sealed record TrainingRunOptions(StorageLocation Output, IReadOnlyList<string>? Splits = null);
+/// <param name="Epochs">训练轮数。</param>
+/// <param name="BatchSize">批大小。</param>
+/// <param name="ImageSize">网络输入分辨率（32 的倍数）。</param>
+/// <param name="LearningRate">初始学习率。</param>
+/// <param name="Scale">模型规模（n / s / m / l / x）。</param>
+/// <param name="Family">模型家族（v8 / v11）。</param>
+/// <param name="Device">计算设备（cpu / cuda）。</param>
+public sealed record TrainingRunOptions(
+    StorageLocation Output,
+    IReadOnlyList<string>? Splits = null,
+    int Epochs = 10,
+    int BatchSize = 8,
+    int ImageSize = 640,
+    float LearningRate = 0.01f,
+    string Scale = "n",
+    string Family = "v8",
+    string Device = "cpu")
+{
+    /// <summary>每轮进度回调（真训练引擎用；干跑忽略）。</summary>
+    public IProgress<TrainingProgress>? Progress { get; init; }
 
-/// <summary>一次训练的摘要：真正训练在 M4（YOLO / RF-DETR 引擎）接入，这里先固定住"训练输入"的形状。</summary>
+    /// <summary>日志回调：设备、模型、每轮摘要。</summary>
+    public Action<string>? Log { get; init; }
+}
+
+/// <summary>
+/// 一轮训练结束时的指标快照。只带标量：界面线程永远不会碰到 TorchSharp 张量。
+/// </summary>
+/// <param name="Epoch">已完成的 epoch 编号（从 0 起）。</param>
+/// <param name="TotalEpochs">目标总轮数。</param>
+/// <param name="Step">截至当前累计的优化步数。</param>
+/// <param name="Loss">该 epoch 的平均损失。</param>
+/// <param name="LearningRate">该 epoch 使用的学习率。</param>
+/// <param name="Map50">验证集 mAP50（未评估为 0）。</param>
+/// <param name="Map50_95">验证集 mAP50-95（未评估为 0）。</param>
+public sealed record TrainingProgress(
+    int Epoch,
+    int TotalEpochs,
+    int Step,
+    float Loss,
+    float LearningRate,
+    float Map50,
+    float Map50_95)
+{
+    /// <summary>完成比例（0~1，用于进度条）。</summary>
+    public double Fraction => TotalEpochs <= 0 ? 0 : Math.Clamp((Epoch + 1) / (double)TotalEpochs, 0, 1);
+}
+
+/// <summary>一次训练的摘要。</summary>
 public sealed record TrainingRunSummary(
     string DatasetId,
     int Images,
@@ -23,8 +69,19 @@ public sealed record TrainingRunSummary(
     bool DryRun,
     IReadOnlyList<string> Warnings)
 {
-    public string Summary =>
-        $"{(DryRun ? "干跑" : "训练")} {DatasetId}：{Images} 张图 / {Boxes} 个框 / {Classes.Count} 类 / split {string.Join(",", Splits)}";
+    /// <summary>最佳 mAP50（干跑为 0）。</summary>
+    public float BestMap50 { get; init; }
+
+    /// <summary>最佳 mAP50-95（干跑为 0）。</summary>
+    public float BestMap50_95 { get; init; }
+
+    /// <summary>模型结构标识（<c>yolov8n-detect-3</c> 之类；干跑为空）。</summary>
+    public string? Architecture { get; init; }
+
+    public string Summary => DryRun
+        ? $"干跑 {DatasetId}：{Images} 张图 / {Boxes} 个框 / {Classes.Count} 类 / split {string.Join(",", Splits)}"
+        : $"训练 {DatasetId}：{Images} 张图 / {Boxes} 个框 / {Classes.Count} 类 / {Architecture}"
+          + $" / mAP50 {BestMap50:F3} / mAP50-95 {BestMap50_95:F3}";
 }
 
 /// <summary>训练入口抽象：模拟流程与将来的真训练引擎都实现它。</summary>

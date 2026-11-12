@@ -171,13 +171,30 @@ public partial class MainWindowViewModel : ObservableObject
         Status = "训练中…";
         AppendLog($"开始训练：{DatasetPath}");
 
+        // 进度与日志回调都在训练线程上触发：Progress<T> 会回到创建它的 UI 线程。
+        var progress = new Progress<TrainingProgress>(item =>
+        {
+            Progress = item.Fraction;
+            Points.Add(new ChartPoint(item.Epoch + 1, item.Loss, item.Map50));
+            Status = $"epoch {item.Epoch + 1}/{item.TotalEpochs} · loss {item.Loss:F4} · mAP50 {item.Map50:F3}";
+        });
+
+        IProgress<string> log = new Progress<string>(AppendLog);
+
+        var options = new TrainingRunOptions(
+            StorageLocation.Parse(OutputDirectory),
+            Epochs: (int)Epochs,
+            BatchSize: (int)BatchSize,
+            ImageSize: (int)ImageSize)
+        {
+            Progress = progress,
+            Log = message => log.Report(message),
+        };
+
         try
         {
-            TrainingRunSummary summary = await _runner
-                .TrainAsync(
-                    _store,
-                    new TrainingRunOptions(StorageLocation.Parse(OutputDirectory)),
-                    _training.Token)
+            TrainingRunSummary summary = await Task
+                .Run(() => _runner.TrainAsync(_store, options, _training.Token), _training.Token)
                 .ConfigureAwait(true);
 
             Progress = 1;
@@ -224,7 +241,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>图表控件用：提示文字随状态变化。</summary>
     public string ChartHint => IsTraining
-        ? "真实训练引擎接入后，这里显示每个 epoch 的 loss 与 mAP"
+        ? "训练中：每个 epoch 结束后刷新 loss 与 mAP"
         : "开始训练后显示 loss / mAP 曲线";
 
     // ── 内部 ──────────────────────────────────────────────────────────────────

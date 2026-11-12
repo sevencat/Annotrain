@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <RootNamespace>Sevencat.Train.Engine</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>训练引擎：模型结构 / 数据管线 / 训练循环 / 检查点与导出（迁移自 OmniTensorSharp）</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,7 +11,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="TorchSharp" />
+    <PackageReference Include="libtorch-cpu" />
+    <!-- 只依赖 ImageFacade 抽象；后端（SkiaSharp）由 exe 入口注册 -->
+    <PackageReference Include="Sevencat.ImageFacade" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 
 </Project>
