@@ -38,11 +38,14 @@
 | S-9 | M1 | 自动检测 + 项目类型落库（Format/DescriptorPath/DetectedAt） | 进行中 | 探测与歧义选择已就绪；项目表落库在 M3 接入 |
 | S-10 | M1 | 端到端模拟流程（生成图 → 导入标注 → 训练 → 导出 → 验证） | 完成 | `Sevencat.Train.App --simulate <dir>`；训练阶段是干跑，M4 换 `IDatasetTrainingRunner` 实现 |
 | S-11 | M1 | 反向导入：现有 YOLO / RF-DETR 数据集 → 标注项目（图片 + 标注 + train/val） | 完成 | `DatasetImportService`（Core）；标注端 `LabelDatasetImportService` + `--import` CLI + 主窗口导入面板 |
-| S-12 | M1 | 项目浏览：打开项目、按 split 列图、预览与叠框 | 完成 | `LabelProjectBrowser`（读库即关库）；`Label.App --open <目录>` 直接打开，导入后自动打开并选中第一张 |
-| L-1 | M2 | 画布迁移（AnnotationCanvas/LabelPalette） | 未开始 | 接 ImageFacade |
-| L-2 | M2 | 主窗口 VM 与视图迁移 | 未开始 | 去掉远端逻辑 |
-| L-3 | M2 | 撤销重做 + 原子保存 | 未开始 | |
-| L-4 | M2 | 数据集浏览器（虚拟化+缩略图） | 未开始 | |
+| S-12 | M1 | 项目管理 + 项目明细：左栏项目列表、右栏图片表格 | 完成 | `TinyLabelProjectCatalog` 列项目与统计；`LabelProjectBrowser` 按项目 Id 装载明细；导入目标固定为当前数据目录 |
+| S-13 | M2 | 单图标注对话框（画布 + 保存） | 完成 | `AnnotationCanvas`（矩形/选中/拖动/删除/缩放/适应窗口）+ `AnnotationWindow`；保存走 `DatabaseAnnotationStore`（乐观锁） |
+| S-14 | M1 | 新建项目（空项目落到当前数据目录） | 完成 | `TinyLabelProjectService`（Core）+ `ProjectEditorWindow`；只有名称与备注，不复制图片 |
+| S-15 | M2 | AI 标注：ONNX(YOLO) 推理 + 候选确认 | 完成 | `YoloOnnxRunner` / `YoloOutputDecoder`（Core，letterbox + NMS + 类别映射）+ `AutoLabelOptionsWindow`；候选虚线显示，接受全部 / ≥0.5 / 丢弃 |
+| L-1 | M2 | 画布迁移（AnnotationCanvas/LabelPalette） | 进行中 | 已落自写精简版（矩形 / 选中 / 拖动 / 删除 / 缩放）；未接 ImageFacade |
+| L-2 | M2 | 主窗口 VM 与视图迁移 | 进行中 | 左项目管理 / 右项目明细 + 标注对话框已通；导出与设置页未做 |
+| L-3 | M2 | 撤销重做 + 原子保存 | 未开始 | 保存已走 `DatabaseAnnotationStore` 乐观锁，撤销未做 |
+| L-4 | M2 | 数据集浏览器（虚拟化+缩略图） | 进行中 | 项目列表 + 图片表格已通；虚拟化 / 缩略图未做 |
 | W-1 | M3 | ServerHost 类库化 | 未开始 | 由 Label.Avalonia 启动 |
 | W-2 | M3 | 项目/图片/统计 API 迁移 | 未开始 | 走 Core 接口 |
 | W-3 | M3 | 内嵌页面与导出 | 未开始 | gzip 静态资源 |
@@ -94,4 +97,6 @@
 | 2026-11-12 | README 加 banner 与作者图；`docs/image_ico.png` 生成 `assets/app.ico`（16–256 共 7 档）+ `assets/app.png`，两个 exe 用 `ApplicationIcon`、窗口用 AvaloniaResource | `UseWin32()` 不带渲染/排版后端，必须同时 `UseSkia().UseHarfBuzz()`，否则启动即崩 |
 | 2026-11-12 | 平台收紧为 Windows x64：`Directory.Build.props` 固定 `RuntimeIdentifier=win-x64`、`PlatformTarget=x64`；Avalonia 由 `UsePlatformDetect()` 改 `UseWin32()`；`PlatformGuard` 在 `Main` 最早期校验非 win-x64 弹窗退出 | 产出目录变为 `bin/<cfg>/net10.0/win-x64`，不再带 `.so`；F-6.4 改为只支持 Windows |
 | 2026-11-12 | 新增反向导入：`DatasetImportService` 读现有 YOLO（`data.yaml`）或 RF-DETR（扫 `train/valid/test` 下的 COCO json）数据集，图片复制到 `projects/{Id}/{split}/`，标注转 labelme JSON，split 落 `images.Split`；`valid`→`val`，多 split 类别取并集并重映射 classId，报告含每个 split 的图数与告警 | 标注端不再只能导出：`LabelDatasetImportService` 做策略校验（只允许 YOLO / COCO 作来源），新增 `--import` 命令行与主窗口「从现有数据集导入」面板；实测把 `--simulate` 导出的 6 图 / 11 框导回项目库，得到 train 5 / val 1、3 类，计数与源一致 |
+| 2026-11-12 | 补齐标注端缺的功能：新建空项目（`TinyLabelProjectService` + `ProjectEditorWindow`）、标注窗口「保存并继续」自动领下一张待标注图、AI 标注（`Microsoft.ML.OnnxRuntime` 加载 YOLO `.onnx`，letterbox → 解码 → NMS → 类别映射，候选以黄色虚线显示，接受全部 / ≥0.5 / 丢弃）；模型路径与置信度写入 `AppSettings`，启动自动回到上次数据目录 | 对齐 TinyLabel 的「AI 方案设置 + AI 预标注 + 候选确认」；`YoloOutputDecoder` 5 个单测覆盖坐标反变换、阈值、同类别 NMS、类别映射、转置输出；实测 4 图项目打开标注窗口稳定 |
+| 2026-11-12 | 标注端改为「左项目管理 / 右项目明细」两栏：`TinyLabelProjectCatalog` 直接读库列出项目（图数 / 已标数 / split），`LabelProjectBrowser` 按项目 Id 装载；右侧图片表格每行带「标注」按钮，顶部「开始标注」作用于选中行；新增自写精简画布 `AnnotationCanvas`（矩形 / 选中 / 拖动 / 删除 / 滚轮缩放 / 适应窗口）与 `AnnotationWindow` 标注对话框，保存走 `DatabaseAnnotationStore` | 交互对齐 TinyLabel 的「列表 → 点进一张 → 标完关闭」；导入按钮改为弹窗，目标固定当前数据目录；新增 `--annotate <数据目录>` 直接进首图标注；实测 4 图项目打开标注窗口进程稳定、画布渲染正常 |
 | 2026-11-12 | 标注端补上「打开项目 + 浏览」：`LabelProjectBrowser` 用 `DatasetStoreResolver` 打开 tinylabel 后一次性装载图片清单即关库（`ImageRef` 保留，字节按需读），界面左侧按 split 列图、右侧预览并用 `Viewbox + Canvas` 按原图像素坐标叠框；导入完成后自动打开目标项目并选中第一张 | 新增 `--open <项目目录>` 直接进项目；VM 的 `SelectedImage` 统一驱动预览（用户点击与程序预设同一路径）；实测打开导入项目：train 5 / val 1，首图 320×240 / 2 框，位图解码成功 |

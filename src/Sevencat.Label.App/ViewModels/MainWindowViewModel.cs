@@ -1,25 +1,37 @@
 using System.Collections.ObjectModel;
 using System.Text;
-using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Sevencat.Core;
-using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.Import;
 using Sevencat.Core.Dataset.TinyLabel;
+using Sevencat.Core.Infrastructure;
 using Sevencat.Core.Infrastructure.Logging;
-using Sevencat.Core.Model;
 using Sevencat.Core.Storage;
 using Sevencat.Label;
 
 namespace Sevencat.Label.App.ViewModels;
 
+/// <summary>
+/// 主窗口：左边项目管理（数据目录 + 项目列表），右边项目明细（图片表格）。
+/// 标注在独立对话框里做（参考 TinyLabel：列表 → 点进一张 → 标完关闭）。
+/// 标注端只认数据库形态；YOLO / RF-DETR 通过「导入」进来、通过「导出」出去。
+/// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly LabelDatasetImportService _importer;
     private readonly LabelProjectBrowser _browser;
-    private readonly BlobStoreRegistry _registry;
+    private readonly TinyLabelProjectCatalog _catalog;
+    private readonly TinyLabelProjectService _projects;
+    private readonly AppSettings _settings;
+    private readonly SettingsStore _settingsStore;
+
+    /// <summary>切项目时的代次：异步加载回来发现已经切走就丢弃结果。</summary>
+    private int _loadVersion;
+
+    /// <summary>当前项目的类别（标注对话框的标签候选项）。</summary>
+    private IReadOnlyList<string> _classes = [];
 
     [ObservableProperty]
     private string _title = $"{AnnotrainInfo.ProductName} · 标注";
@@ -30,185 +42,284 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _logText = string.Empty;
 
+    /// <summary>当前数据目录（<c>annotrain.db</c> 所在目录）。为空表示还没打开。</summary>
     [ObservableProperty]
-    private string _projectTitle = "未打开项目";
-
-    /// <summary>要导入的源数据集目录（YOLO 的 data.yaml 所在目录 / RF-DETR 的根目录）。</summary>
-    [ObservableProperty]
-    private string _importSource = string.Empty;
-
-    /// <summary>导入后项目库放哪（annotrain.db 与 projects/ 都在这）。</summary>
-    [ObservableProperty]
-    private string _importDestination = string.Empty;
+    private string _dataDirectory = string.Empty;
 
     [ObservableProperty]
-    private string _importProjectName = string.Empty;
+    private bool _isBusy;
+
+    // ── 左侧：项目管理 ────────────────────────────────────────────────────────
+
+    public ObservableCollection<ProjectSummaryViewModel> Projects { get; } = [];
 
     [ObservableProperty]
-    private bool _isImporting;
+    private ProjectSummaryViewModel? _selectedProject;
 
-    /// <summary>当前项目的图片清单（按 split 顺序）。</summary>
+    // ── 右侧：项目明细 ────────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    private string _projectTitle = "未选择项目";
+
     public ObservableCollection<ProjectImageViewModel> Images { get; } = [];
 
-    /// <summary>列表选中项；外部设置（如打开项目后自动选第一张）会触发预览加载。</summary>
     [ObservableProperty]
     private ProjectImageViewModel? _selectedImage;
 
-    /// <summary>当前选中图片的预览与叠框。</summary>
-    [ObservableProperty]
-    private Bitmap? _preview;
+    /// <summary>当前数据目录下的库文件路径；没打开目录时为空。</summary>
+    public string DatabasePath => string.IsNullOrWhiteSpace(DataDirectory)
+        ? string.Empty
+        : Path.Combine(DataDirectory, TinyLabelProjectCatalog.DefaultDatabaseFile);
 
-    [ObservableProperty]
-    private double _previewWidth = 1;
-
-    [ObservableProperty]
-    private double _previewHeight = 1;
-
-    [ObservableProperty]
-    private string _selectionInfo = "打开项目后在这里看图片与标注";
-
-    public ObservableCollection<BoxOverlay> OverlayBoxes { get; } = [];
+    public IReadOnlyList<string> Classes => _classes;
 
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
         LogBuffer logBuffer,
         LabelDatasetImportService importer,
         LabelProjectBrowser browser,
-        BlobStoreRegistry registry)
+        TinyLabelProjectCatalog catalog,
+        TinyLabelProjectService projects,
+        AppSettings settings,
+        SettingsStore settingsStore)
     {
         _logger = logger;
         _importer = importer;
         _browser = browser;
-        _registry = registry;
+        _catalog = catalog;
+        _projects = projects;
+        _settings = settings;
+        _settingsStore = settingsStore;
 
-        logger.LogInformation("主窗口已创建，等待打开项目");
+        logger.LogInformation("主窗口已创建，等待打开数据目录");
 
         LogText = string.Join(Environment.NewLine, logBuffer.Snapshot().Select(entry => entry.ToString()));
     }
 
-    // ── 打开项目 ──────────────────────────────────────────────────────────────
+    // ── 数据目录与项目列表 ────────────────────────────────────────────────────
 
-    /// <summary>打开一个标注项目（「图片目录 + SQLite」），把图片清单填进左侧列表。</summary>
-    public async Task OpenProjectAsync(string folder, CancellationToken ct = default)
+    /// <summary>启动时自动打开上次的数据目录（不存在就跳过）。</summary>
+    public Task OpenLastWorkspaceAsync(CancellationToken ct = default)
+        => !string.IsNullOrWhiteSpace(_settings.LastDataDirectory) && Directory.Exists(_settings.LastDataDirectory)
+            ? OpenWorkspaceAsync(_settings.LastDataDirectory, ct)
+            : Task.CompletedTask;
+
+    /// <summary>打开数据目录：列出库里所有项目，默认选中第一个。</summary>
+    public async Task OpenWorkspaceAsync(string folder, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(folder))
         {
             return;
         }
 
-        Status = "正在打开项目…";
+        DataDirectory = folder;
+        _settings.LastDataDirectory = folder;
+        SaveSettings();
+
+        Status = "正在读取项目列表…";
+
+        await RefreshProjectsAsync(selectProjectId: null, ct).ConfigureAwait(true);
+    }
+
+    /// <summary>在当前数据目录里新建一个空项目，建完刷新列表并选中它。</summary>
+    public async Task CreateProjectAsync(ProjectDraft draft, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        if (string.IsNullOrWhiteSpace(DataDirectory))
+        {
+            Status = "请先打开数据目录，新项目会建在那个数据库里";
+            return;
+        }
+
+        if (IsBusy)
+        {
+            return;
+        }
+
+        IsBusy = true;
 
         try
         {
-            OpenedProject project = await _browser.OpenAsync(folder, ct).ConfigureAwait(true);
+            long projectId = await _projects
+                .CreateAsync(
+                    StorageLocation.Parse(DataDirectory),
+                    draft.Name,
+                    draft.Description,
+                    ct)
+                .ConfigureAwait(true);
 
-            ProjectTitle = $"项目：{project.ProjectName}";
+            Status = $"已新建项目「{draft.Name}」";
+            AppendLog(Status);
 
-            Images.Clear();
-            OverlayBoxes.Clear();
-            Preview = null;
-            SelectionInfo = "打开项目后在这里看图片与标注";
+            await RefreshProjectsAsync(projectId, ct).ConfigureAwait(true);
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "新建项目失败");
+            Status = $"新建项目失败：{error.Message}";
+            AppendLog(Status);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
-            foreach (ProjectImage image in project.Images)
+    private void SaveSettings()
+    {
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(error, "保存设置失败");
+        }
+    }
+
+    /// <summary>重新读项目列表；<paramref name="selectProjectId"/> 为空时尽量保持当前选中。</summary>
+    public async Task RefreshProjectsAsync(long? selectProjectId = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(DataDirectory))
+        {
+            return;
+        }
+
+        long? keep = selectProjectId ?? SelectedProject?.Id;
+
+        try
+        {
+            IReadOnlyList<TinyLabelProjectSummary> summaries = await _catalog
+                .ListAsync(StorageLocation.Parse(DataDirectory), ct)
+                .ConfigureAwait(true);
+
+            Projects.Clear();
+
+            foreach (TinyLabelProjectSummary summary in summaries)
+            {
+                Projects.Add(new ProjectSummaryViewModel(summary));
+            }
+
+            ProjectSummaryViewModel? target = keep is { } id
+                ? Projects.FirstOrDefault(project => project.Id == id)
+                : null;
+
+            SelectedProject = target ?? Projects.FirstOrDefault();
+
+            Status = Projects.Count == 0
+                ? "这个数据目录里还没有项目，可以用「导入数据集」建一个"
+                : $"共 {Projects.Count} 个项目";
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "读取项目列表失败");
+            Status = $"读取项目列表失败：{error.Message}";
+            AppendLog(Status);
+        }
+    }
+
+    partial void OnSelectedProjectChanged(ProjectSummaryViewModel? value)
+        => _ = LoadProjectAsync(value);
+
+    /// <summary>标完一张回来：重载当前项目，尽量还选中刚才那张。</summary>
+    public Task RefreshCurrentProjectAsync(string? keepRelativePath = null)
+        => LoadProjectAsync(SelectedProject, keepRelativePath);
+
+    /// <summary>加载选中项目的图片明细，并选中第一张（或 <paramref name="keepRelativePath"/>）。</summary>
+    private async Task LoadProjectAsync(ProjectSummaryViewModel? project, string? keepRelativePath = null)
+    {
+        int version = ++_loadVersion;
+
+        Images.Clear();
+        SelectedImage = null;
+        _classes = [];
+
+        if (project is null)
+        {
+            ProjectTitle = "未选择项目";
+            return;
+        }
+
+        try
+        {
+            OpenedProject opened = await _browser
+                .OpenAsync(DataDirectory, project.Id)
+                .ConfigureAwait(true);
+
+            // 加载期间用户已经切到别的项目，丢弃这次结果
+            if (version != _loadVersion)
+            {
+                return;
+            }
+
+            ProjectTitle = $"项目：{opened.ProjectName}（{project.Stats}）";
+            _classes = [.. opened.Classes];
+
+            foreach (ProjectImage image in opened.Images)
             {
                 Images.Add(new ProjectImageViewModel(image));
             }
 
-            Status = $"已打开「{project.ProjectName}」：{Images.Count} 张图 / {project.BoxCount} 个框，" +
-                     $"split {string.Join(" / ", project.Splits)}";
-            AppendLog(Status);
+            SelectedImage = (keepRelativePath is null
+                                ? null
+                                : Images.FirstOrDefault(image => image.RelativePath == keepRelativePath))
+                            ?? Images.FirstOrDefault();
 
-            SelectedImage = Images.FirstOrDefault();
-        }
-        catch (DatasetProjectSelectionException error)
-        {
-            Status = "这个库里有多个项目，暂不支持选择";
-            AppendLog($"打开失败：{error.Message}");
+            Status = Images.Count == 0
+                ? "这个项目还没有图片，可以导入一个数据集"
+                : $"项目「{opened.ProjectName}」：{Images.Count} 张图 / {opened.BoxCount} 个框";
         }
         catch (Exception error)
         {
-            _logger.LogError(error, "打开项目失败");
-            Status = $"打开失败：{error.Message}";
-            AppendLog($"打开失败：{error.Message}");
+            _logger.LogError(error, "打开项目 {Project} 失败", project.Name);
+            Status = $"打开项目失败：{error.Message}";
+            AppendLog(Status);
         }
-    }
-
-    /// <summary>列表选中项变化时自动加载预览（用户点击与程序预设走同一条路）。</summary>
-    partial void OnSelectedImageChanged(ProjectImageViewModel? value)
-    {
-        if (value is not null)
-        {
-            _ = ShowAsync(value);
-        }
-    }
-
-    /// <summary>选中一张图：读图片字节做预览，并把框按原图像素坐标叠上去。</summary>
-    public async Task ShowAsync(ProjectImageViewModel? item, CancellationToken ct = default)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        Bitmap? bitmap = await LoadBitmapAsync(item.Sample.Image, ct).ConfigureAwait(true);
-
-        Preview = bitmap;
-        PreviewWidth = Math.Max(1, item.Sample.Width);
-        PreviewHeight = Math.Max(1, item.Sample.Height);
-
-        OverlayBoxes.Clear();
-
-        foreach (BoxAnnotation box in item.Sample.Boxes)
-        {
-            OverlayBoxes.Add(new BoxOverlay(box.X1, box.Y1, box.Width, box.Height, box.ClassId));
-        }
-
-        SelectionInfo = $"{item.RelativePath} — {item.Sample.Width}×{item.Sample.Height}，" +
-                        $"{item.BoxCount} 个框（{item.Split}）";
-
-        _logger.LogInformation(
-            "预览：{Image}，{Width}×{Height}，{Boxes} 个框，位图{State}",
-            item.RelativePath,
-            item.Sample.Width,
-            item.Sample.Height,
-            item.BoxCount,
-            bitmap is null ? "解码失败" : "已加载");
     }
 
     // ── 导入 ──────────────────────────────────────────────────────────────────
 
-    /// <summary>把源数据集导成标注项目：图片、标注与 train/val 一起搬过来，导入后直接打开。</summary>
-    public async Task ImportAsync(CancellationToken ct = default)
+    /// <summary>
+    /// 把 YOLO / RF-DETR 数据集导入当前数据目录，作为新项目；导入完刷新列表并选中它。
+    /// 目标固定为 <see cref="DataDirectory"/>，不另选目录。
+    /// </summary>
+    public async Task ImportAsync(ImportRequest request, CancellationToken ct = default)
     {
-        if (IsImporting)
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(DataDirectory))
+        {
+            Status = "请先打开数据目录，导入的项目会放进那个数据库";
+            return;
+        }
+
+        if (IsBusy)
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(ImportSource) || string.IsNullOrWhiteSpace(ImportDestination))
-        {
-            Status = "请先选择源数据集目录与目标目录";
-            return;
-        }
-
-        IsImporting = true;
+        IsBusy = true;
         Status = "正在导入…";
 
         try
         {
+            LabelDatasetPolicy.EnsureImportable(request.Format);
+
             DatasetImportReport report = await _importer
                 .ImportAsync(
                     new DatasetImportOptions(
-                        StorageLocation.Parse(ImportSource),
-                        StorageLocation.Parse(ImportDestination),
-                        string.IsNullOrWhiteSpace(ImportProjectName) ? null : ImportProjectName.Trim()),
+                        StorageLocation.Parse(request.SourcePath),
+                        StorageLocation.Parse(DataDirectory),
+                        string.IsNullOrWhiteSpace(request.ProjectName) ? null : request.ProjectName.Trim(),
+                        request.Format),
                     ct)
                 .ConfigureAwait(true);
 
             Status = report.Summary;
             AppendLog(report);
 
-            await OpenProjectAsync(ImportDestination, ct).ConfigureAwait(true);
+            await RefreshProjectsAsync(report.ProjectId, ct).ConfigureAwait(true);
         }
         catch (Exception error)
         {
@@ -218,32 +329,11 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            IsImporting = false;
+            IsBusy = false;
         }
     }
 
     // ── 内部 ──────────────────────────────────────────────────────────────────
-
-    private async Task<Bitmap?> LoadBitmapAsync(ImageRef image, CancellationToken ct)
-    {
-        try
-        {
-            IBlobStore store = _registry.Get(image.Location);
-            var key = new StorageKey(image.Location, image.RelativePath);
-
-            await using Stream input = await store.OpenReadAsync(key, ct).ConfigureAwait(true);
-            using var buffer = new MemoryStream();
-            await input.CopyToAsync(buffer, ct).ConfigureAwait(true);
-
-            buffer.Position = 0;
-            return new Bitmap(buffer);
-        }
-        catch (Exception error)
-        {
-            _logger.LogWarning(error, "读取图片失败：{Image}", image);
-            return null;
-        }
-    }
 
     private void AppendLog(DatasetImportReport report)
     {

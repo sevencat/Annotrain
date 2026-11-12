@@ -61,14 +61,29 @@ Sevencat.Label.App.exe --import <源目录> --output <目标目录> [--name 项�
 产物在 `--output` 目录：`annotrain.db`（项目 / 类别 / 图片 / 标注）、`projects/{项目Id}/{split}/`（图片副本）、
 `import-report.txt`（每个 split 的图数与告警）。源目录只读，导入目标不能与源相同。
 
-导入完就是普通标注项目：界面会自动打开它，左侧按 split 列出全部图片（每行带尺寸与框数），
-点一张就能看到图片和已有的框。之后可以继续标注、导出 YOLO / RF-DETR，或者直接给训练端按 `images.Split` 训练。
+导入完就是普通标注项目：左侧项目列表会选中它，右侧表格列出全部图片。
 `--format` 只在探测同时命中多种形态时才需要。
 
-打开一个已有项目（跳过导入）：
+## 标注程序界面
+
+- **左侧「项目管理」**：打开数据目录后列出库里所有项目（名称 / 图数 / 已标数 / split）。
+  「新建」建一个空项目，「导入数据集」把 YOLO / RF-DETR 导进来——两者都落到**当前数据目录**的同一个 `annotrain.db`。
+- **右侧「项目明细」**：选中项目后是图片表格（文件 / split / 尺寸 / 标注）。
+  点表格行尾的「标注」，或点顶部「开始标注」（作用于当前选中行），弹出单图标注窗口。
+- **标注窗口**：左键拖拽画矩形；点选后可拖动、`Delete` 删除；滚轮缩放、`适应窗口` 复位；
+  标签从项目类别里选，也可以直接输入新名字；「保存」写回 `annotations.DocJson` 并刷新表格，
+  「保存并继续」存完自动领下一张还没框的图。
+- **AI 标注**：先「AI 设置」选一个 YOLO 导出的 `.onnx` 和置信度（记在用户配置里），
+  再点「AI 标注」跑推理。结果先显示成黄色虚线候选框，确认后「接受全部」/「只接受 ≥0.5」/「丢弃」，
+  接受才会变成正式框并需要保存。模型 class id 按项目类别顺序映射。
+
+AI 推理走 `Microsoft.ML.OnnxRuntime`（CPU），仍然是纯 C#、不装 Python。
+
+命令行走同一个流程：
 
 ```powershell
-Sevencat.Label.App.exe --open <项目目录>
+Sevencat.Label.App.exe --open <数据目录>        # 打开目录，列出项目
+Sevencat.Label.App.exe --annotate <数据目录>    # 打开目录并直接进第一张图的标注窗口
 ```
 
 ## 模拟流程（不用准备数据）
@@ -119,7 +134,7 @@ Sevencat.Train.sln
 ## 快速开始
 
 ```powershell
-# 标注（数据集浏览 / 标注）
+# 标注（项目管理 / 项目明细 / 标注对话框）
 dotnet build Sevencat.Label.sln
 dotnet run --project src/Sevencat.Label.App
 

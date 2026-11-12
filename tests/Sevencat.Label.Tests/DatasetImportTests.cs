@@ -156,6 +156,92 @@ public class DatasetImportTests
     }
 
     [Fact]
+    public async Task Catalog_ListsEveryProjectInWorkspace()
+    {
+        using var source = new TestWorkspace();
+        using var target = new TestWorkspace();
+
+        WriteYoloDataset(source);
+
+        using ServiceProvider provider = BuildProvider();
+        var importer = provider.GetRequiredService<DatasetImportService>();
+        var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
+        var browser = provider.GetRequiredService<LabelProjectBrowser>();
+
+        DatasetImportReport first = await importer.ImportAsync(new DatasetImportOptions(
+            StorageLocation.FromPath(source.Root), StorageLocation.FromPath(target.Root), "第一"));
+
+        DatasetImportReport second = await importer.ImportAsync(new DatasetImportOptions(
+            StorageLocation.FromPath(source.Root), StorageLocation.FromPath(target.Root), "第二"));
+
+        IReadOnlyList<TinyLabelProjectSummary> projects =
+            await catalog.ListAsync(StorageLocation.FromPath(target.Root));
+
+        Assert.Equal(new[] { "第一", "第二" }, projects.Select(project => project.Name));
+        Assert.All(projects, project => Assert.Equal(4, project.ImageCount));
+        Assert.All(projects, project => Assert.Equal(4, project.LabeledCount));
+        Assert.Equal(new[] { "train", "val" }, projects[0].Splits);
+
+        // 多项目库必须按 Id 打开，不能再依赖「库里只有一个项目」
+        OpenedProject opened = await browser.OpenAsync(target.Root, second.ProjectId);
+
+        Assert.Equal("第二", opened.ProjectName);
+        Assert.Equal(second.ProjectId, opened.ProjectId);
+        Assert.Equal(4, opened.Images.Count);
+        Assert.NotEqual(first.ProjectId, second.ProjectId);
+    }
+
+    [Fact]
+    public async Task Catalog_ReturnsEmptyForDirectoryWithoutDatabase()
+    {
+        using var empty = new TestWorkspace();
+
+        using ServiceProvider provider = BuildProvider();
+        var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
+
+        IReadOnlyList<TinyLabelProjectSummary> projects =
+            await catalog.ListAsync(StorageLocation.FromPath(empty.Root));
+
+        Assert.Empty(projects);
+    }
+
+    [Fact]
+    public async Task ProjectService_CreatesEmptyProjectInWorkspace()
+    {
+        using var workspace = new TestWorkspace();
+
+        using ServiceProvider provider = BuildProvider();
+        var service = provider.GetRequiredService<TinyLabelProjectService>();
+        var catalog = provider.GetRequiredService<TinyLabelProjectCatalog>();
+
+        long projectId = await service.CreateAsync(
+            StorageLocation.FromPath(workspace.Root),
+            "空项目",
+            "备注写这里");
+
+        TinyLabelProjectSummary project =
+            Assert.Single(await catalog.ListAsync(StorageLocation.FromPath(workspace.Root)));
+
+        Assert.Equal(projectId, project.Id);
+        Assert.Equal("空项目", project.Name);
+        Assert.Equal("备注写这里", project.Description);
+        Assert.Equal(0, project.ImageCount);
+        Assert.Empty(project.Splits);
+    }
+
+    [Fact]
+    public async Task ProjectService_RejectsEmptyName()
+    {
+        using var workspace = new TestWorkspace();
+
+        using ServiceProvider provider = BuildProvider();
+        var service = provider.GetRequiredService<TinyLabelProjectService>();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateAsync(StorageLocation.FromPath(workspace.Root), "   "));
+    }
+
+    [Fact]
     public async Task Import_RejectsTargetEqualToSource()
     {
         using var workspace = new TestWorkspace();

@@ -33,10 +33,24 @@ public partial class App : Application
             var window = new MainWindow { DataContext = viewModel };
             desktop.MainWindow = window;
 
-            // --open <目录>：启动后直接打开项目，便于从命令行/快捷方式进入
+            // --open <数据目录>：启动后直接读这个目录里的项目列表，便于从命令行/快捷方式进入
             if (ReadArgument(desktop.Args, "--open") is { } folder)
             {
-                window.Opened += async (_, _) => await viewModel.OpenProjectAsync(folder);
+                window.Opened += async (_, _) => await viewModel.OpenWorkspaceAsync(folder);
+            }
+            else if (ReadArgument(desktop.Args, "--annotate") is { } annotateFolder)
+            {
+                // --annotate <数据目录>：打开目录并直接进入首图标注（演示 / 自测用）
+                window.Opened += async (_, _) =>
+                {
+                    await viewModel.OpenWorkspaceAsync(annotateFolder);
+                    await window.AnnotateSelectedAsync();
+                };
+            }
+            else
+            {
+                // 没给参数时回到上次的数据目录
+                window.Opened += async (_, _) => await viewModel.OpenLastWorkspaceAsync();
             }
 
             desktop.Exit += (_, _) =>

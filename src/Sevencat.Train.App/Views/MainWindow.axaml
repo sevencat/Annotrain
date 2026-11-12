@@ -1,41 +1,80 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Sevencat.Train.App.ViewModels"
+        xmlns:controls="using:Sevencat.Train.App.Controls"
         x:Class="Sevencat.Train.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Icon="/Assets/app.png"
-        Width="1280" Height="800"
+        Width="1280" Height="860"
+        MinWidth="960" MinHeight="640"
         WindowStartupLocation="CenterScreen">
 
-  <Grid RowDefinitions="*,180">
-    <Grid Grid.Row="0" ColumnDefinitions="240,*">
-      <Border Grid.Column="0" Background="{DynamicResource MaterialDesignPaper}">
-        <StackPanel Margin="16" Spacing="8">
-          <TextBlock Text="Annotrain Train" FontSize="20" FontWeight="SemiBold" />
-          <TextBlock Text="训练" Opacity="0.7" Margin="0,16,0,0" />
-          <TextBlock Text="检测验证" Opacity="0.7" />
-          <TextBlock Text="设置" Opacity="0.7" />
-        </StackPanel>
-      </Border>
+  <Grid RowDefinitions="Auto,*,Auto">
 
-      <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-        <TextBlock Text="{Binding Title}" FontSize="24" HorizontalAlignment="Center" />
-        <TextBlock Text="{Binding Status}" Opacity="0.7" HorizontalAlignment="Center" />
-        <TextBlock Text="M0 骨架：M4 接入 TorchSharp 引擎与数据集接口。"
-                   Opacity="0.5" HorizontalAlignment="Center" />
+    <!-- 工具栏 -->
+    <Border Grid.Row="0" Padding="12,10" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource MaterialDesignDivider}">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <Button Grid.Column="0" Content="打开数据集…" Click="OnOpenDataset" />
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+            <TextBlock Text="{Binding DatasetSummary}" Opacity="0.85" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding DatasetStats}" Opacity="0.55" FontSize="12" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+            <Button Content="开始训练" Click="OnStart" IsEnabled="{Binding !IsTraining}" />
+            <Button Content="停止" Click="OnStop" IsEnabled="{Binding IsTraining}" />
+            <Button Content="检测…" Click="OnDetect"
+                    ToolTip.Tip="选一张图片，用 ONNX 模型检测后弹窗显示叠加结果" />
+          </StackPanel>
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+          <TextBlock Grid.Column="0" Text="epochs" VerticalAlignment="Center" Opacity="0.6" />
+          <NumericUpDown Grid.Column="1" Value="{Binding Epochs}" Minimum="1" Maximum="1000"
+                         Increment="1" Width="96" FormatString="0" />
+
+          <TextBlock Grid.Column="2" Text="batch" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
+          <NumericUpDown Grid.Column="3" Value="{Binding BatchSize}" Minimum="1" Maximum="64"
+                         Increment="1" Width="88" FormatString="0" />
+
+          <TextBlock Grid.Column="4" Text="imgsz" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
+          <NumericUpDown Grid.Column="5" Value="{Binding ImageSize}" Minimum="64" Maximum="1536"
+                         Increment="32" Width="96" FormatString="0" />
+
+          <TextBlock Grid.Column="6" Text="输出目录" VerticalAlignment="Center" Opacity="0.6" Margin="8,0,0,0" />
+          <TextBox Grid.Column="7" Text="{Binding OutputDirectory}" />
+          <Button Grid.Column="8" Content="…" Click="OnPickOutput" />
+        </Grid>
       </StackPanel>
-    </Grid>
+    </Border>
 
-    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}"
-            Background="{DynamicResource MaterialDesignBackground}">
-      <DockPanel Margin="12,8">
-        <TextBlock DockPanel.Dock="Top" Text="日志" FontWeight="SemiBold" Margin="0,0,0,6" />
-        <TextBox Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True"
+    <!-- 中间：训练曲线 -->
+    <Border Grid.Row="1" Margin="12,10" CornerRadius="6" ClipToBounds="True">
+      <controls:TrainingChart x:Name="Chart" />
+    </Border>
+
+    <!-- 下面：状态与日志 -->
+    <Border Grid.Row="2" Height="220" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource MaterialDesignDivider}">
+      <Grid RowDefinitions="Auto,Auto,*" Margin="12,8" RowSpacing="6">
+        <ProgressBar Grid.Row="0" Minimum="0" Maximum="1" Value="{Binding Progress}" Height="6" />
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Grid.Column="0" Text="{Binding Status}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="1" Text="{Binding RunInfo}" Margin="16,0" Opacity="0.6"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="2" Text="{Binding DatasetStats}" Opacity="0.6" VerticalAlignment="Center" />
+        </Grid>
+
+        <TextBox Grid.Row="2" Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True"
                  FontFamily="Consolas,Menlo,monospace" FontSize="12"
                  TextWrapping="NoWrap" VerticalContentAlignment="Top"
                  Background="Transparent" BorderThickness="0" />
-      </DockPanel>
+      </Grid>
     </Border>
   </Grid>
 

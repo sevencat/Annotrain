@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Sevencat.Train.App.ViewModels"
+        x:Class="Sevencat.Train.App.Views.DetectWindow"
+        Title="检测结果"
+        Width="1080" Height="760"
+        MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" Padding="12,8" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource MaterialDesignDivider}">
+      <TextBlock x:Name="HeaderText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,260">
+      <Border Grid.Column="0" Margin="12" CornerRadius="6" Background="#1E1E1E" ClipToBounds="True">
+        <Viewbox Stretch="Uniform" Margin="8">
+          <Canvas x:Name="Board" Width="1" Height="1">
+            <Image x:Name="Preview" Stretch="Fill" />
+
+            <ItemsControl x:Name="Boxes">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <Canvas />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+
+              <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                  <Setter Property="Canvas.Left" Value="{ReflectionBinding X}" />
+                  <Setter Property="Canvas.Top" Value="{ReflectionBinding Y}" />
+                </ControlTheme>
+              </ItemsControl.ItemContainerTheme>
+
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DetectedBox">
+                  <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                             Stroke="#22D3EE" StrokeThickness="2" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Canvas>
+        </Viewbox>
+      </Border>
+
+      <Border Grid.Column="1" Margin="0,12,12,12" Padding="8" CornerRadius="6"
+              BorderThickness="1" BorderBrush="{DynamicResource MaterialDesignDivider}">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="检测框" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <ListBox x:Name="BoxList" BorderThickness="0">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DetectedBox">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
+                  <TextBlock Grid.Column="0" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" Text="{Binding ScoreText}" Opacity="0.7" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="12,8" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource MaterialDesignDivider}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="HintText" Opacity="0.7" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <Button Grid.Column="1" Content="关闭" Click="OnClose" IsDefault="True" />
+      </Grid>
+    </Border>
+  </Grid>
+
+</Window>

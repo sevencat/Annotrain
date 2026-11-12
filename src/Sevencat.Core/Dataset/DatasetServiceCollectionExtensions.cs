@@ -37,6 +37,8 @@ public static class DatasetServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IDatasetStoreProvider, YoloDatasetStoreProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IDatasetStoreProvider, CocoDatasetStoreProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IDatasetStoreProvider, TinyLabel.TinyLabelDatasetStoreProvider>());
+        services.TryAddSingleton<TinyLabel.TinyLabelProjectCatalog>();
+        services.TryAddSingleton<TinyLabel.TinyLabelProjectService>();
 
         services.TryAddSingleton<DatasetStoreResolver>();
 

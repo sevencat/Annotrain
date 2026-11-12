@@ -3,7 +3,7 @@ using Sevencat.Label;
 
 namespace Sevencat.Label.App.ViewModels;
 
-/// <summary>数据集浏览器里的一行：所属 split + 图片 + 框。</summary>
+/// <summary>项目明细表格里的一行：split + 图片 + 框数。</summary>
 public sealed class ProjectImageViewModel(ProjectImage image)
 {
     public ProjectImage Image { get; } = image;
@@ -18,19 +18,11 @@ public sealed class ProjectImageViewModel(ProjectImage image)
 
     public int BoxCount => Image.BoxCount;
 
+    /// <summary>表格「尺寸」列。</summary>
+    public string SizeText => $"{Sample.Width}×{Sample.Height}";
+
+    /// <summary>表格「标注」列。</summary>
+    public string BoxText => BoxCount == 0 ? "未标注" : $"{BoxCount} 框";
+
     public string Summary => $"{Split} · {Sample.Width}×{Sample.Height} · {BoxCount} 框";
-}
-
-/// <summary>叠在预览图上的一个框（原图像素坐标，随 Viewbox 一起缩放）。</summary>
-public sealed class BoxOverlay(double x, double y, double width, double height, int classId)
-{
-    public double X { get; } = x;
-
-    public double Y { get; } = y;
-
-    public double Width { get; } = width;
-
-    public double Height { get; } = height;
-
-    public int ClassId { get; } = classId;
 }

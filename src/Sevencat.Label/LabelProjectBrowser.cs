@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sevencat.Core.Dataset;
 using Sevencat.Core.Dataset.TinyLabel;
 using Sevencat.Core.Storage;
@@ -14,8 +15,10 @@ public sealed record ProjectImage(string Split, DatasetSample Sample)
 
 /// <summary>打开后的项目快照：图片清单与类别，纯数据，不持有数据库连接。</summary>
 public sealed record OpenedProject(
+    long ProjectId,
     StorageLocation Folder,
     string ProjectName,
+    IReadOnlyList<string> Classes,
     IReadOnlyList<string> Splits,
     IReadOnlyList<ProjectImage> Images)
 {
@@ -31,13 +34,23 @@ public sealed record OpenedProject(
 /// </summary>
 public sealed class LabelProjectBrowser(DatasetStoreResolver resolver)
 {
-    /// <summary><paramref name="folder"/> 是数据集根（<c>annotrain.db</c> 所在目录）。</summary>
-    public async Task<OpenedProject> OpenAsync(string folder, CancellationToken ct = default)
+    /// <summary>
+    /// <paramref name="folder"/> 是数据目录（<c>annotrain.db</c> 所在目录）。
+    /// 库里只有一个项目时可省略 <paramref name="projectId"/>；多个项目必须指定。
+    /// </summary>
+    public async Task<OpenedProject> OpenAsync(
+        string folder,
+        long? projectId = null,
+        CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folder);
 
         DatasetOpenResult opened = await resolver
-            .OpenAsync(StorageLocation.Parse(folder), DatasetFormat.TinyLabelDb, datasetId: null, ct)
+            .OpenAsync(
+                StorageLocation.Parse(folder),
+                DatasetFormat.TinyLabelDb,
+                projectId?.ToString(CultureInfo.InvariantCulture),
+                ct)
             .ConfigureAwait(false);
 
         try
@@ -57,9 +70,15 @@ public sealed class LabelProjectBrowser(DatasetStoreResolver resolver)
                 }
             }
 
-            string name = (opened.Store as TinyLabelDatasetStore)?.ProjectName ?? opened.Store.Id;
+            var store = opened.Store as TinyLabelDatasetStore;
 
-            return new OpenedProject(opened.Store.Root, name, [.. opened.Store.Splits], images);
+            return new OpenedProject(
+                store?.ProjectId ?? projectId ?? 0,
+                opened.Store.Root,
+                store?.ProjectName ?? opened.Store.Id,
+                [.. opened.Store.Classes.Names],
+                [.. opened.Store.Splits],
+                images);
         }
         finally
         {

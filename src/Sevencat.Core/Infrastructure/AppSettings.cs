@@ -17,4 +17,13 @@ public sealed class AppSettings
 
     /// <summary>启动时是否自动拉起内嵌 Web 服务。</summary>
     public bool StartWebOnLaunch { get; set; } = true;
+
+    /// <summary>上次打开的数据目录（含 annotrain.db），启动时自动打开。</summary>
+    public string LastDataDirectory { get; set; } = string.Empty;
+
+    /// <summary>AI 标注用的 ONNX 模型路径（YOLO 导出）。</summary>
+    public string AutoLabelModelPath { get; set; } = string.Empty;
+
+    /// <summary>AI 标注置信度阈值。</summary>
+    public double AutoLabelConfidence { get; set; } = 0.25;
 }
