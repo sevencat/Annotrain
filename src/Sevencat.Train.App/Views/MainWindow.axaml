@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Sevencat.Train.App.ViewModels"
+        x:Class="Sevencat.Train.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Icon="/Assets/app.png"
+        Width="1280" Height="800"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid RowDefinitions="*,180">
+    <Grid Grid.Row="0" ColumnDefinitions="240,*">
+      <Border Grid.Column="0" Background="{DynamicResource MaterialDesignPaper}">
+        <StackPanel Margin="16" Spacing="8">
+          <TextBlock Text="Annotrain Train" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="训练" Opacity="0.7" Margin="0,16,0,0" />
+          <TextBlock Text="检测验证" Opacity="0.7" />
+          <TextBlock Text="设置" Opacity="0.7" />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+        <TextBlock Text="{Binding Title}" FontSize="24" HorizontalAlignment="Center" />
+        <TextBlock Text="{Binding Status}" Opacity="0.7" HorizontalAlignment="Center" />
+        <TextBlock Text="M0 骨架：M4 接入 TorchSharp 引擎与数据集接口。"
+                   Opacity="0.5" HorizontalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+
+    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}"
+            Background="{DynamicResource MaterialDesignBackground}">
+      <DockPanel Margin="12,8">
+        <TextBlock DockPanel.Dock="Top" Text="日志" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <TextBox Text="{Binding LogText}" IsReadOnly="True" AcceptsReturn="True"
+                 FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                 TextWrapping="NoWrap" VerticalContentAlignment="Top"
+                 Background="Transparent" BorderThickness="0" />
+      </DockPanel>
+    </Border>
+  </Grid>
+
+</Window>

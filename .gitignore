@@ -1,0 +1,34 @@
+# 构建产物
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.cache
+*.pdb
+*.dll
+!lib/**/*.dll
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# 测试
+TestResults/
+coverage/
+
+# 运行产物
+runs/
+*.log
+logs/
+
+# 系统
+Thumbs.db
+.DS_Store
+
+# 临时
+.tmp/
